@@ -21,17 +21,17 @@ genai-poc/
 
 ### Setup
 
-1. **Backend**
+1. **Install uv** (if not already installed)
+   Follow instructions at [astral.sh/uv](https://astral.sh/uv).
+
+2. **Install Dependencies**
    ```bash
-   cd src
-   pip install -r requirements.txt
+   uv sync
    ```
 
-2. **UI (Streamlit)**
+3. **Run UI (Streamlit)**
    ```bash
-   cd ui
-   pip install -r requirements.txt
-   streamlit run app.py
+   uv run streamlit run ui/app.py
    ```
 
 3. **Infrastructure**
@@ -43,4 +43,15 @@ genai-poc/
    ```
 
 4. **Database**
-   - Run scripts in `sql/` in the order indicated by their filename prefix.
+    - Run scripts in `sql/` in the order indicated by their filename prefix.
+
+## MCP Server
+This project exposes its data services via a Model Context Protocol (MCP) server. 
+
+### To run the MCP server:
+```bash
+uv run src/mcp_server.py
+```
+
+See [mcp_walkthrough.md](./mcp_walkthrough.md) for detailed configuration instructions for Claude Desktop and other MCP clients.
+
