@@ -24,12 +24,12 @@ Edit your `claude_desktop_config.json` (usually found in `%APPDATA%\Claude\claud
 {
   "mcpServers": {
     "training-data": {
-      "command": "D:/vishwak.rajgopalan/.local/bin/uv.exe",
+      "command": "D:/<user>/.local/bin/uv.exe",
       "args": [
         "run",
         "--project",
-        "d:/vishwak.rajgopalan/projects/GithubProjects/genai-poc",
-        "d:/vishwak.rajgopalan/projects/GithubProjects/genai-poc/src/mcp_server.py"
+        "d:/<user>/projects/GithubProjects/genai-poc",
+        "d:/<user>/projects/GithubProjects/genai-poc/src/mcp_server.py"
       ]
     }
   }
