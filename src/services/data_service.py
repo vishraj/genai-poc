@@ -185,3 +185,31 @@ class DataService:
                 search_val = f"%{name_query}%"
                 cur.execute(sql, (search_val, search_val))
                 return cur.fetchall()
+
+    def search_employees_by_name(self, first_name: Optional[str] = None, last_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Searches for employees by first name and/or last name (case-insensitive).
+        
+        Args:
+            first_name: The first name or partial first name to search for.
+            last_name: The last name or partial last name to search for.
+            
+        Returns:
+            A list of matching employees.
+        """
+        sql = "SELECT user_id, first_name, last_name, team_name, job_family FROM training.employee_fact WHERE 1=1"
+        params = []
+        if first_name:
+            sql += " AND first_name ILIKE %s"
+            params.append(f"%{first_name}%")
+        if last_name:
+            sql += " AND last_name ILIKE %s"
+            params.append(f"%{last_name}%")
+            
+        if not params:
+            return []
+            
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, tuple(params))
+                return cur.fetchall()

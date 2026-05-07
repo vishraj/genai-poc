@@ -53,4 +53,5 @@ The following tools are now available to your AI:
 - `get_compliance_report`: Check if an employee is compliant.
 - `search_courses`: Find courses in the catalog.
 - `get_team_training_summary`: Get team-level stats.
-- `search_employees`: Search for employees by name.
+- `search_employees`: Search for employees by name (single query).
+- `search_employees_by_name`: Advanced search by first and last name separately.

@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from typing import Optional
 from mcp.server.fastmcp import FastMCP
 from services.data_service import DataService
 
@@ -74,12 +75,25 @@ def get_team_training_summary(team_name: str) -> str:
 @mcp.tool()
 def search_employees(name_query: str) -> str:
     """
-    Searches for employees by first or last name.
+    Searches for employees by first or last name using a single query string.
     
     Args:
         name_query: The name or partial name to search for.
     """
     result = data_service.search_employees(name_query)
+    return str(result) if result else "No employees matched your search."
+
+@mcp.tool()
+def search_employees_by_name(first_name: Optional[str] = None, last_name: Optional[str] = None) -> str:
+    """
+    Searches for employees by first name, last name, or both (case-insensitive).
+    At least one parameter must be provided.
+    
+    Args:
+        first_name: The first name or partial first name (optional).
+        last_name: The last name or partial last name (optional).
+    """
+    result = data_service.search_employees_by_name(first_name, last_name)
     return str(result) if result else "No employees matched your search."
 
 if __name__ == "__main__":
