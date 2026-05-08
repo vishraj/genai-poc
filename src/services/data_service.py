@@ -213,3 +213,94 @@ class DataService:
             with conn.cursor() as cur:
                 cur.execute(sql, tuple(params))
                 return cur.fetchall()
+
+    def get_completions_by_job_family(self) -> List[Dict[str, Any]]:
+        """
+        Aggregates course completions grouped by Job Family.
+        
+        Returns:
+            A list of job families and their corresponding completion counts.
+        """
+        query = """
+        SELECT 
+            e.job_family,
+            COUNT(t.row_num) as completion_count
+        FROM training.employee_fact e
+        JOIN training.transcript_fact t ON e.user_id = t.user_id
+        WHERE t.enrollment_status = 'Completed'
+        GROUP BY e.job_family
+        ORDER BY completion_count DESC;
+        """
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query)
+                return cur.fetchall()
+
+    def get_completions_by_geography(self, level: str = 'office') -> List[Dict[str, Any]]:
+        """
+        Aggregates course completions grouped by geographic dimension (office or district).
+        
+        Args:
+            level: The geographic level ('office' or 'district').
+            
+        Returns:
+            A list of geographic locations and their corresponding completion counts.
+        """
+        column = 'office_name' if level.lower() == 'office' else 'district_name'
+        query = f"""
+        SELECT 
+            e.{column} as location,
+            COUNT(t.row_num) as completion_count
+        FROM training.employee_fact e
+        JOIN training.transcript_fact t ON e.user_id = t.user_id
+        WHERE t.enrollment_status = 'Completed'
+        GROUP BY e.{column}
+        ORDER BY completion_count DESC;
+        """
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query)
+                return cur.fetchall()
+
+    def get_mandatory_completion_rates(self) -> List[Dict[str, Any]]:
+        """
+        Calculates the completion rate of mandatory courses for each employee.
+        
+        Returns:
+            A list of employees with their mandatory course completion percentage.
+        """
+        query = """
+        WITH mandatory_requirements AS (
+            SELECT 
+                e.user_id,
+                e.first_name,
+                e.last_name,
+                e.job_family,
+                cf.course_number
+            FROM training.employee_fact e
+            JOIN training.curriculum_fact cf ON e.job_family = cf.job_family
+            WHERE cf.course_is_mandatory = TRUE
+        ),
+        completions AS (
+            SELECT 
+                mr.*,
+                CASE WHEN t.enrollment_status = 'Completed' THEN 1 ELSE 0 END as is_completed
+            FROM mandatory_requirements mr
+            LEFT JOIN training.transcript_fact t ON mr.user_id = t.user_id AND mr.course_number = t.course_number
+        )
+        SELECT 
+            user_id,
+            first_name,
+            last_name,
+            job_family,
+            COUNT(*) as total_mandatory,
+            SUM(is_completed) as completed_mandatory,
+            ROUND((SUM(is_completed)::NUMERIC / COUNT(*)::NUMERIC) * 100, 2) as completion_rate
+        FROM completions
+        GROUP BY user_id, first_name, last_name, job_family
+        ORDER BY completion_rate ASC;
+        """
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query)
+                return cur.fetchall()

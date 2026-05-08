@@ -96,6 +96,58 @@ def search_employees_by_name(first_name: Optional[str] = None, last_name: Option
     result = data_service.search_employees_by_name(first_name, last_name)
     return str(result) if result else "No employees matched your search."
 
+@mcp.tool()
+def get_completions_by_job_family() -> str:
+    """
+    Aggregates course completions grouped by Job Family. 
+    Useful for visualizing training impact across different roles.
+    """
+    result = data_service.get_completions_by_job_family()
+    return str(result)
+
+@mcp.tool()
+def get_completions_by_geography(level: str = 'office') -> str:
+    """
+    Aggregates course completions grouped by geographic dimension (office or district).
+    Useful for regional performance analysis.
+    
+    Args:
+        level: The geographic level ('office' or 'district'). Defaults to 'office'.
+    """
+    result = data_service.get_completions_by_geography(level)
+    return str(result)
+
+@mcp.tool()
+def get_mandatory_completion_rates() -> str:
+    """
+    Calculates the completion rate of mandatory courses for each employee.
+    Identifies gaps in regulatory compliance.
+    """
+    result = data_service.get_mandatory_completion_rates()
+    return str(result)
+
+@mcp.tool()
+def get_dashboard_stats() -> str:
+    """
+    Retrieves high-level summary statistics (counts) for the dashboard.
+    """
+    with data_service._get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM training.employee_fact")
+            emp_count = cur.fetchone()['count']
+            cur.execute("SELECT count(*) FROM training.transcript_fact WHERE enrollment_status = 'Completed'")
+            comp_count = cur.fetchone()['count']
+            cur.execute("SELECT count(*) FROM training.catalog_fact")
+            course_count = cur.fetchone()['count']
+            cur.execute("SELECT count(*) FROM training.transcript_fact WHERE enrollment_status = 'Enrolled'")
+            enrolled_count = cur.fetchone()['count']
+            return str({
+                "total_employees": emp_count,
+                "completions": comp_count,
+                "catalog_size": course_count,
+                "in_progress": enrolled_count
+            })
+
 if __name__ == "__main__":
     # Run the server using stdio transport by default
     mcp.run()
