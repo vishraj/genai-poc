@@ -1,213 +1,203 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import os
 import sys
 import json
+import importlib
+import re
 from datetime import datetime
 
-# Add the src/ui directory to the path so we can import services
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+# ── Path Setup ────────────────────────────────────────────────────────────────
+_here = os.path.dirname(os.path.abspath(__file__))
+_src  = os.path.abspath(os.path.join(_here, "..", "src"))
+if _src not in sys.path:
+    sys.path.insert(0, _src)
+
+# ── Imports ───────────────────────────────────────────────────────────────────
+import services.ai_service as _ai_mod
+import mcp_client as _mcp_mod
+import services.history_service as _hist_mod
+
+importlib.reload(_ai_mod)
+importlib.reload(_mcp_mod)
+importlib.reload(_hist_mod)
+
 from services.ai_service import AIService
 from mcp_client import UI_MCPClient
+from services.history_service import HistoryService
 
-# Initialize Services
-mcp_client = UI_MCPClient()
+# ── Service Init ──────────────────────────────────────────────────────────────
 ai_service = AIService()
+mcp_client = UI_MCPClient()
+history_service = HistoryService()
 
-# --- Page Configuration ---
+# ── Session State Init ───────────────────────────────────────────────────────
+if "history" not in st.session_state:
+    st.session_state.history = []
+if "session_id" not in st.session_state:
+    st.session_state.session_id = history_service.create_new_session_id()
+if "current_title" not in st.session_state:
+    st.session_state.current_title = "New Conversation"
+
+# ── Page Config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="FedCash Training | Pure MCP",
+    page_title="FedCash Training Intelligence",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
 )
 
-# --- Custom CSS for Premium Look ---
+# ── Styling ───────────────────────────────────────────────────────────────────
 st.markdown("""
-    <style>
-    .main {
-        background-color: transparent;
-    }
-    [data-testid="stMetric"] {
-        background-color: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 15px;
-        border-radius: 12px;
-    }
-    .stSidebar {
-        background-color: #1e293b;
-    }
-    .stSidebar [data-testid="stMarkdownContainer"] p {
-        color: #cbd5e1;
-    }
-    .stButton>button {
-        background-color: #3b82f6;
-        color: white;
-        border-radius: 8px;
-        border: none;
-        padding: 10px 24px;
-    }
-    .stTextInput>div>div>input {
-        border-radius: 8px;
-    }
-    </style>
+<style>
+.stMetric            { background:#1e293b; padding:20px; border-radius:12px; border:1px solid #334155; }
+.query-header { font-size: 0.9rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; margin-top: 24px; }
+.query-text { font-size: 1.25rem; color: #f8fafc; font-weight: 600; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid #334155; }
+.insight-container { background: #0f172a; border-left: 4px solid #3b82f6; padding: 24px; border-radius: 0 12px 12px 0; margin: 16px 0 24px 0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+.insight-label { font-size: 0.75rem; color: #3b82f6; text-transform: uppercase; font-weight: 700; letter-spacing: 0.1em; margin-bottom: 8px; }
+.insight-content { font-size: 1.05rem; color: #cbd5e1; line-height: 1.6; }
+div[data-testid="column"] button { display: flex; justify-content: center; align-items: center; margin: 0 auto; }
+</style>
 """, unsafe_allow_html=True)
 
-# --- Sidebar ---
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.image("https://www.federalreserve.gov/images/fed-logo-small.png", width=100)
-    st.title("Admin Console")
-    st.markdown("---")
-    
-    st.subheader("Protocol Status")
-    st.success("Mode: Pure MCP (Host)")
-    st.info("The UI is communicating with the backend via formal MCP CallTool requests.")
+    st.title("💬 Chat History")
+    if st.button("➕ New Conversation", use_container_width=True):
+        st.session_state.history = []
+        st.session_state.session_id = history_service.create_new_session_id()
+        st.session_state.current_title = "New Conversation"
+        st.rerun()
+    st.divider()
+    saved_sessions = history_service.list_sessions()
+    for s in saved_sessions:
+        sid, title = s['session_id'], s.get('title', 'Untitled')
+        col_title, col_del = st.columns([0.8, 0.2])
+        if col_title.button(f"📄 {title[:22]}...", key=f"load_{sid}", use_container_width=True):
+            session_data = history_service.get_session(sid)
+            if session_data:
+                st.session_state.history = session_data.get('messages', [])
+                st.session_state.session_id = sid
+                st.session_state.current_title = title
+                st.rerun()
+        with col_del:
+            if st.button("🗑️", key=f"del_{sid}"):
+                history_service.delete_session(sid)
+                if st.session_state.session_id == sid:
+                    st.session_state.history = []
+                    st.session_state.session_id = history_service.create_new_session_id()
+                    st.session_state.current_title = "New Conversation"
+                st.rerun()
 
-# --- Header ---
+# ── Header + KPI ──────────────────────────────────────────────────────────────
 st.title("📊 Training Intelligence Dashboard")
-st.markdown("#### Real-time insights powered by Model Context Protocol (MCP)")
+st.caption(f"Strategy & Analysis Hub | Session: {st.session_state.current_title}")
 
-# --- Key Metrics Row ---
-col1, col2, col3, col4 = st.columns(4)
+stats_raw = mcp_client.run_tool_sync("get_dashboard_stats", {}) or {}
+stats = {}
+try:
+    stats = json.loads(stats_raw) if isinstance(stats_raw, str) else stats_raw
+except:
+    stats = {}
 
-# Fetch stats via MCP Tool
-with st.spinner("Fetching protocol stats..."):
-    stats = mcp_client.run_tool_sync("get_dashboard_stats", {})
-    if isinstance(stats, str): # Handle string response from MCP
-        import ast
-        stats = ast.literal_eval(stats)
-    
-    if not stats:
-        stats = {"total_employees": 0, "completions": 0, "catalog_size": 0, "in_progress": 0}
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Total Workforce", stats.get("total_employees", 0))
+c2.metric("Completions",     stats.get("completions",     0), delta="12%")
+c3.metric("Active Catalog",  stats.get("catalog_size",    0))
+c4.metric("Risk Profile",    f"{stats.get('in_progress', 0)} Enrolled")
 
-with col1:
-    st.metric("Total Employees", stats.get("total_employees", 0))
-with col2:
-    st.metric("Course Completions", stats.get("completions", 0), delta="12% vs last month")
-with col3:
-    st.metric("Catalog Size", stats.get("catalog_size", 0))
-with col4:
-    st.metric("In-Progress", stats.get("in_progress", 0), delta="-5%", delta_color="inverse")
+st.divider()
 
-st.markdown("---")
+# ── Tabs ───────────────────────────────────────────────────────────────────────
+tab_chat, tab_analytics, tab_compliance = st.tabs(["💬 AI Intelligence", "📈 Performance Trends", "🛡️ Compliance Registry"])
 
-# --- Tabbed Interface ---
-tab1, tab2, tab3 = st.tabs(["💬 AI Insights", "📈 Visual Analytics", "🛡️ Compliance Registry"])
-
-# --- Tab 1: AI Insights (LLM Generated Viz) ---
-with tab1:
-    st.header("Ask your Data")
-    st.markdown("Enter a natural language query below. Claude will route your request through the **MCP Server**.")
-    
-    query = st.text_input("Example: 'Show me completion rates by job family' or 'Show me the transcript for James Baker'", 
-                         placeholder="Type your request here...")
-    
-    if query:
-        st.info(f"AI is routing query: '{query}'...")
-        
-        # 1. Determine data context based on query (AGENTIC ROUTING via MCP)
-        with st.spinner("Analyzing query intent..."):
-            tool_calls = ai_service.route_query(query)
-            
-        data_context_map = {}
-        if tool_calls:
-            st.caption(f"AI decided to use MCP tools: {', '.join([c.get('tool') for c in tool_calls])}")
-            
-        for call in tool_calls:
-            tool_name = str(call.get('tool')).strip()
-            params = call.get('params', {})
-            
-            try:
-                # CALL THE TOOL VIA MCP
-                result = mcp_client.run_tool_sync(tool_name, params)
-                
-                # Convert string result (from mcp server) back to list/dict for context
-                if isinstance(result, str) and result.startswith("["):
-                    import ast
-                    result = ast.literal_eval(result)
-                
-                data_context_map[tool_name] = result
-                
-                # Special Case: If we found employees, automatically get transcripts too
-                if tool_name == "search_employees" and result:
-                    user_id = result[0]['user_id']
-                    st.caption(f"MCP discovered employee: {result[0].get('first_name')} {result[0].get('last_name')} ({user_id})")
-                    data_context_map["transcript"] = mcp_client.run_tool_sync("get_employee_transcript", {"user_id": user_id})
-                    data_context_map["compliance"] = mcp_client.run_tool_sync("get_compliance_report", {"user_id": user_id})
-
-            except Exception as e:
-                st.error(f"MCP Tool Execution Error ({tool_name}): {e}")
-
-        data_context = json.dumps(data_context_map) if data_context_map else ""
-        
-        # 2. Call AI Service to generate visualization
-        if data_context and data_context != "{}":
-            with st.spinner("Generating visualization via Amazon Bedrock..."):
-                response = ai_service.generate_viz_logic(query, data_context)
-                
-                st.subheader("AI Insight")
-                st.write(response.get('explanation', 'No explanation provided.'))
-                
-                summary = response.get('summary', [])
-                if summary:
-                    for point in summary:
-                        st.markdown(f"* {point}")
-                
-                # Execute the generated code
-                try:
-                    code = response.get('code', '').strip()
+with tab_chat:
+    st.subheader("Interactive Data Exploration")
+    if st.session_state.history:
+        for msg in st.session_state.history:
+            if msg["role"] == "user":
+                st.markdown(f'<div class="query-header">User Query</div><div class="query-text">{msg["content"]}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="insight-container"><div class="insight-label">AI Analysis & Insight</div><div class="insight-content">{msg["content"]}</div></div>', unsafe_allow_html=True)
+                viz_data = msg.get("viz_data")
+                if viz_data:
+                    bullets = viz_data.get("summary", [])
+                    if bullets:
+                        cols = st.columns(len(bullets))
+                        for col, pt in zip(cols, bullets): col.info(f"**{pt}**")
+                    code = viz_data.get("code", "").strip()
                     if code:
-                        if code.startswith("```python"): code = code[9:]
-                        if code.startswith("```"): code = code[3:]
-                        if code.endswith("```"): code = code[:-3]
-                        st.markdown("---")
-                        exec(code.strip())
-                except Exception as e:
-                    st.error(f"Failed to render visualization: {e}")
-                    st.code(code)
-        else:
-            st.warning("The MCP server returned no data for this query.")
+                        try: exec(code)
+                        except: pass
 
-# --- Tab 2: Visual Analytics ---
-with tab2:
-    st.header("Analytics Overview")
-    
-    c1, c2 = st.columns(2)
-    
-    with c1:
-        st.subheader("Completion Trends")
-        yearly_data = {'Year': ['2020', '2021', '2022', '2023', '2024'], 'Completions': [23, 26, 37, 36, 45]}
-        df_yearly = pd.DataFrame(yearly_data)
-        fig_line = px.line(df_yearly, x='Year', y='Completions', markers=True, title="Annual Completion Volume")
+    query = st.chat_input("Ask about workforce training, compliance, or trends...")
+    if query:
+        if not st.session_state.history: st.session_state.current_title = query[:30]
+        st.markdown(f'<div class="query-header">User Query</div><div class="query-text">{query}</div>', unsafe_allow_html=True)
+        with st.status("Analyzing workforce data...", expanded=True) as status:
+            tool_calls = ai_service.route_query(query, history=st.session_state.history)
+            data_ctx: dict = {}
+            for call in tool_calls:
+                name, params = call.get("tool", ""), call.get("params", {})
+                res = mcp_client.run_tool_sync(name, params)
+                if isinstance(res, str):
+                    try: res = json.loads(res)
+                    except: pass
+                data_ctx[name] = res
+                if name in ("search_employees", "search_employees_by_name") and res:
+                    uid = res[0]["user_id"]
+                    data_ctx["summary"]    = mcp_client.run_tool_sync("get_employee_summary",    {"user_id": uid})
+                    data_ctx["transcript"] = mcp_client.run_tool_sync("get_employee_transcript", {"user_id": uid})
+                    data_ctx["compliance"] = mcp_client.run_tool_sync("get_compliance_report",   {"user_id": uid})
+            if data_ctx:
+                clean_ctx = {k: v for k, v in data_ctx.items() if v is not None}
+                viz = ai_service.generate_viz_logic(query, json.dumps(clean_ctx), history=st.session_state.history)
+                st.markdown(f'<div class="insight-container"><div class="insight-label">AI Analysis & Insight</div><div class="insight-content">{viz.get("explanation", "")}</div></div>', unsafe_allow_html=True)
+                bullets = viz.get("summary", [])
+                if bullets:
+                    cols = st.columns(len(bullets))
+                    for col, pt in zip(cols, bullets): col.info(f"**{pt}**")
+                code = viz.get("code", "").strip()
+                if code:
+                    if "```" in code: code = re.sub(r"```(?:python)?\s*(.*?)```", r"\1", code, flags=re.DOTALL).strip()
+                    try: exec(code)
+                    except: pass
+                st.session_state.history.append({"role": "user", "content": query})
+                st.session_state.history.append({"role": "assistant", "content": viz.get("explanation", ""), "viz_data": viz})
+                history_service.save_session(st.session_state.session_id, st.session_state.current_title, st.session_state.history)
+                status.update(label="Analysis complete ✅", state="complete", expanded=False)
+                st.rerun()
+            else:
+                status.update(label="No records found", state="error", expanded=False)
+
+with tab_analytics:
+    st.subheader("Workforce Development Analytics")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        hist_df = pd.DataFrame({"Year": ["2021", "2022", "2023", "2024"], "Completions": [26, 37, 36, 45]})
+        fig_line = px.line(hist_df, x="Year", y="Completions", markers=True, title="Annual Progress", template="plotly_dark")
+        fig_line.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(15,23,42,0.8)")
         st.plotly_chart(fig_line, use_container_width=True)
-        
-    with c2:
-        st.subheader("Office Performance")
-        geo_data_str = mcp_client.run_tool_sync("get_completions_by_geography", {"level": "office"})
-        import ast
-        geo_data = ast.literal_eval(geo_data_str) if isinstance(geo_data_str, str) else []
-        df_geo = pd.DataFrame(geo_data).head(10)
-        if not df_geo.empty:
-            fig_geo = px.bar(df_geo, x='completion_count', y='location', orientation='h',
-                             title="Top 10 Offices by Completion", color='completion_count')
+    with col_b:
+        geo_raw = mcp_client.run_tool_sync("get_completions_by_geography", {"level": "office"})
+        geo_data = {}
+        try: geo_data = json.loads(geo_raw) if isinstance(geo_raw, str) else (geo_raw or [])
+        except: geo_data = []
+        if geo_data:
+            df_geo = pd.DataFrame(geo_data).head(10)
+            fig_geo = px.bar(df_geo, x="completion_count", y="location", orientation="h", title="Top Performing Offices", template="plotly_dark")
+            fig_geo.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(15,23,42,0.8)", margin=dict(l=200, r=100, t=80, b=50))
             st.plotly_chart(fig_geo, use_container_width=True)
 
-# --- Tab 3: Compliance Registry ---
-with tab3:
-    st.header("Mandatory Training Compliance")
-    
-    data_str = mcp_client.run_tool_sync("get_mandatory_completion_rates", {})
-    import ast
-    data = ast.literal_eval(data_str) if isinstance(data_str, str) else []
-    df_comp = pd.DataFrame(data)
-    
-    if not df_comp.empty:
-        non_compliant = df_comp[df_comp['completion_rate'] < 100]
-        st.warning(f"Found {len(non_compliant)} employees with incomplete mandatory training.")
+with tab_compliance:
+    st.subheader("Mandatory Training Oversight")
+    comp_raw = mcp_client.run_tool_sync("get_mandatory_completion_rates", {})
+    comp_data = {}
+    try: comp_data = json.loads(comp_raw) if isinstance(comp_raw, str) else (comp_raw or [])
+    except: comp_data = []
+    if comp_data:
+        df_comp = pd.DataFrame(comp_data)
         st.dataframe(df_comp, use_container_width=True, hide_index=True)
 
-# --- Footer ---
-st.markdown("---")
-st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Architecture: Pure MCP Host")
+st.divider()
+st.caption(f"System time: {datetime.now():%Y-%m-%d %H:%M:%S} | Persistence: DynamoDB")

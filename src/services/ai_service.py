@@ -1,6 +1,73 @@
 import json
+import re
 from utils.aws_clients import aws_manager
 from utils.config import Config
+
+_VIZ_SYSTEM_PROMPT = """
+You are a Senior Data Visualization Engineer building a premium Streamlit dashboard for a Federal Reserve Bank.
+Given a USER QUERY and DATA CONTEXT (JSON), produce a concise insight and a polished, professional Plotly chart.
+
+--- STRICT OUTPUT FORMAT ---
+===EXPLANATION===
+<One clear paragraph summarizing the key finding for a business audience.>
+===SUMMARY===
+<Bullet point 1 - key stat or finding>
+<Bullet point 2 - key stat or finding>
+<Bullet point 3 - key stat or finding>
+===CODE===
+<Raw Python only. No markdown fences. No code comments.>
+===END===
+
+--- MANDATORY CHART QUALITY RULES (apply every single one) ---
+
+1. IMPORTS: Always begin with:
+   import plotly.express as px
+   import plotly.graph_objects as go
+   import pandas as pd
+   import streamlit as st
+
+2. DARK THEME: Use template='plotly_dark' on every figure.
+
+3. BASE LAYOUT: Call fig.update_layout() with:
+   paper_bgcolor='rgba(0,0,0,0)',
+   plot_bgcolor='rgba(15,23,42,0.8)',
+   font=dict(family='Inter, sans-serif', size=13, color='#f1f5f9'),
+   title=dict(font=dict(size=17, color='#f8fafc'), x=0.02),
+   legend=dict(
+       orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1,
+       bgcolor='rgba(30,41,59,0.8)', bordercolor='#475569', borderwidth=1
+   )
+
+4. HORIZONTAL BAR CHARTS (use for transcript / course status data):
+   - orientation='h', y=course_column, x=numeric_column
+   - margin=dict(l=270, r=100, t=80, b=50)
+   - height = max(380, 48 * number_of_rows)
+   - Status color_discrete_map:
+       {'Completed': '#22c55e', 'Enrolled': '#f59e0b', 'Dropped': '#ef4444',
+        'Not Started': '#64748b', 'Mandatory': '#3b82f6', 'Optional': '#8b5cf6'}
+   - Never truncate y-axis labels; set automargin=True on yaxis
+
+5. VERTICAL BAR / LINE CHARTS (use for aggregate / trend data):
+   - height=430, margin=dict(l=60, r=40, t=70, b=60), bargap=0.3
+   - color_discrete_sequence=['#3b82f6','#8b5cf6','#06b6d4','#f59e0b','#22c55e']
+
+6. AXIS LABELS: Always call:
+   fig.update_xaxes(title_text='<meaningful label>', title_font=dict(size=13))
+   fig.update_yaxes(title_text='<meaningful label>', title_font=dict(size=13), automargin=True)
+
+7. DATA: Build a pd.DataFrame entirely from the context JSON inside the code block.
+   All variables must be self-contained — do not reference external variables.
+
+8. RENDER: End every code block with:
+   st.plotly_chart(fig, use_container_width=True)
+
+9. WHEN TO SKIP THE CHART (CRITICAL):
+   - DO NOT generate a chart for purely descriptive or categorical lists (e.g., course catalog search results, employee directories, descriptive summaries).
+   - ONLY generate a chart if there is a meaningful numeric metric to visualize (e.g., completion counts, percentages, progress over time, or aggregate stats).
+   - If the data is a list of items with only categorical info (names, titles, dates, descriptions) and no quantitative metric, leave CODE empty before ===END===.
+   - For descriptive results, focus on providing a rich EXPLANATION and a bulleted SUMMARY instead.
+"""
+
 
 class AIService:
     def __init__(self):
@@ -11,108 +78,110 @@ class AIService:
         if ":" in Config.MODEL_ID or Config.MODEL_ID.startswith(_inference_profile_prefixes):
             self.model_arn = Config.MODEL_ID
 
-    def route_query(self, query: str) -> list:
+    # ── 1. QUERY ROUTER ──────────────────────────────────────────────────────
+    def route_query(self, query: str, history: list = None) -> list:
         """
-        Uses Claude to decide which DataService methods to call.
+        Uses Claude to decide which MCP tools to call.
+        Returns a list of {tool, params} dicts.
         """
         system_prompt = (
             "You are a Data Router for a corporate training database. "
             "Your ONLY task is to return a JSON list of tool calls. "
             "DO NOT include any text before or after the JSON.\n\n"
             "AVAILABLE TOOLS:\n"
-            "1. get_completions_by_job_family()\n"
-            "2. get_completions_by_geography(level='office'|'district')\n"
-            "3. get_mandatory_completion_rates()\n"
-            "4. search_employees(name_query='...') - Use for finding people by first/last name.\n"
-            "5. get_employee_transcript(user_id='...') - Use for training history.\n"
-            "6. get_compliance_report(user_id='...') - Use for mandatory training gaps.\n\n"
+            "1. get_dashboard_stats() - High-level counts of employees, courses, and completions.\n"
+            "2. get_completions_by_job_family() - Aggregate completion counts grouped by role/job family.\n"
+            "3. get_completions_by_geography(level='office'|'district') - Aggregate completions by region or office.\n"
+            "4. get_mandatory_completion_rates() - List of employees with their mandatory training % completion.\n"
+            "5. search_employees(name_query='...') - Find employees by name (first, last, or full name).\n"
+            "6. search_employees_by_name(first_name='...', last_name='...') - More precise search when names are known separately.\n"
+            "7. get_employee_summary(user_id='...') - Demographic summary and transcript counts. 'user_id' can be an ID (ABC123) or a FULL NAME (David Hill).\n"
+            "8. get_employee_transcript(user_id='...') - Detailed history of courses. 'user_id' can be an ID (ABC123) or a FULL NAME (David Hill).\n"
+            "9. get_compliance_report(user_id='...') - Analysis of missing mandatory courses. 'user_id' can be an ID (ABC123) or a FULL NAME (David Hill).\n"
+            "10. search_courses(query_text='...') - Find courses in the catalog by title or number.\n"
+            "11. get_team_training_summary(team_name='...') - Aggregated progress for everyone on a specific team.\n\n"
+            "--- CRITICAL GUIDELINES ---\n"
+            "- Tools 7, 8, and 9 can resolve names to IDs automatically. You can pass a name like 'David Hill' directly into the 'user_id' parameter.\n"
+            "- If a query is about AGGREGATE trends, use tools 2, 3, or 4.\n"
+            "- If a query is about a TEAM, use tool 11.\n\n"
             "--- OUTPUT FORMAT ---\n"
-            "Return EXACTLY a JSON list like this: [{\"tool\": \"tool_name\", \"params\": {}}]\n"
-            "Example: [{\"tool\": \"search_employees\", \"params\": {\"name_query\": \"James Baker\"}}]"
+            "Return EXACTLY a JSON list: [{\"tool\": \"tool_name\", \"params\": {}}]\n"
         )
-        
-        response = self.generate_response(query, system_prompt)
-        
-        # Robust cleaning
+
+        # Copy history to avoid mutating st.session_state.history
+        messages = list(history) if history else []
+        messages.append({"role": "user", "content": query})
+
+        response = self.generate_response(messages, system_prompt)
+
+        # Strip markdown fences if the LLM wraps the JSON in them
         clean = response.strip()
         if "```" in clean:
-            # Extract content between backticks if they exist
-            import re
             match = re.search(r"```(?:json)?\s*(.*?)```", clean, re.DOTALL)
             if match:
                 clean = match.group(1).strip()
-        
+
         try:
             return json.loads(clean)
         except Exception as e:
-            # Fallback for debugging
-            print(f"DEBUG: Router JSON parse error: {e}. Raw response: {response}")
+            print(f"[AIService] Router parse error: {e}. Raw: {response}")
             return []
 
-    def generate_response(self, prompt: str, system_prompt: str = "") -> str:
+    # ── 2. VISUALIZATION GENERATOR ───────────────────────────────────────────
+    def generate_viz_logic(self, user_query: str, data_context: str, history: list = None) -> dict:
         """
-        Generic method to invoke Claude 3 via Bedrock.
+        Generates a professional Plotly chart and insight using a delimiter-based
+        output format (avoids JSON-escaping issues with multi-line Python code).
         """
+        history_str = json.dumps(history) if history else "none"
+        prompt = (
+            f"USER QUERY: {user_query}\n\n"
+            f"CONVERSATION HISTORY:\n{history_str}\n\n"
+            f"DATA CONTEXT:\n{data_context}"
+        )
+
+        messages = [{"role": "user", "content": prompt}]
+        raw = self.generate_response(messages, _VIZ_SYSTEM_PROMPT).strip()
+
+        # ── Parse delimiter sections ─────────────────────────────────────────
+        def _extract(text: str, start_tag: str, end_tag: str) -> str:
+            try:
+                s = text.index(start_tag) + len(start_tag)
+                e = text.index(end_tag, s)
+                return text[s:e].strip()
+            except ValueError:
+                return ""
+
+        explanation = _extract(raw, "===EXPLANATION===", "===SUMMARY===")
+        summary_raw = _extract(raw, "===SUMMARY===",    "===CODE===")
+        code        = _extract(raw, "===CODE===",       "===END===")
+
+        summary = [ln.lstrip("•-* ") for ln in summary_raw.splitlines() if ln.strip()]
+
+        if not explanation:
+            explanation = "The AI returned an unexpected format."
+            code = f"st.text({repr(raw)})"
+
+        return {"explanation": explanation, "summary": summary, "code": code}
+
+    # ── 3. BEDROCK INVOCATION ────────────────────────────────────────────────
+    def generate_response(self, messages: list, system_prompt: str = "") -> str:
+        """Generic Claude 3 invocation via Amazon Bedrock."""
         try:
             body = json.dumps({
                 "anthropic_version": "bedrock-2023-05-31",
                 "max_tokens": 4096,
                 "system": system_prompt,
-                "messages": [
-                    {"role": "user", "content": prompt}
-                ],
-                "temperature": 0
+                "messages": messages,
+                "temperature": 0,
             })
 
             response = aws_manager.bedrock_runtime.invoke_model(
                 modelId=self.model_arn,
-                body=body
+                body=body,
             )
 
-            response_body = json.loads(response.get('body').read())
-            return response_body.get('content', [{}])[0].get('text', "")
+            response_body = json.loads(response.get("body").read())
+            return response_body.get("content", [{}])[0].get("text", "")
         except Exception as e:
             return f"Error invoking AI model: {str(e)}"
-
-    def generate_viz_logic(self, user_query: str, data_context: str) -> dict:
-        """
-        Generates Python code for Streamlit/Plotly visualizations based on user query.
-        """
-        system_prompt = (
-            "You are a Senior Data Analyst. Your goal is to generate Python code for a Streamlit dashboard. "
-            "The code should use Plotly for visualizations. "
-            "You will be provided with a USER QUERY and a DATA CONTEXT (JSON representation of the data).\n\n"
-            "--- OUTPUT FORMAT ---\n"
-            "Return a JSON block with THREE fields:\n"
-            "1. 'explanation': A brief high-level description of the insight.\n"
-            "2. 'summary': A list of 2-3 summarized bullet points (key takeaways) from the data.\n"
-            "3. 'code': The Python code to render the chart using st.plotly_chart().\n"
-            "Example:\n"
-            "{\n"
-            "  \"explanation\": \"This chart shows...\",\n"
-            "  \"summary\": [\"Point A\", \"Point B\"],\n"
-            "  \"code\": \"import plotly.express as px\\nfig = px.bar(...)\\nst.plotly_chart(fig)\"\n"
-            "}"
-        )
-
-        from datetime import datetime
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        prompt = f"CURRENT TIME: {current_time}\nUSER QUERY: {user_query}\n\nDATA CONTEXT:\n{data_context}"
-        
-        raw_response = self.generate_response(prompt, system_prompt)
-        
-        # Clean up markdown fences if present
-        clean_response = raw_response.strip()
-        if clean_response.startswith("```json"):
-            clean_response = clean_response[7:]
-        if clean_response.endswith("```"):
-            clean_response = clean_response[:-3]
-        clean_response = clean_response.strip()
-        
-        try:
-            return json.loads(clean_response)
-        except Exception as e:
-            return {
-                "explanation": f"I received a response but couldn't parse the structure: {str(e)}",
-                "code": f"# Raw response from AI:\n# {raw_response}"
-            }

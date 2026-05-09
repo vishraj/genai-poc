@@ -18,12 +18,19 @@ class AWSClientManager:
             self.session = boto3.Session(region_name=Config.AWS_REGION)
 
         self._bedrock_runtime = None
+        self._dynamodb = None
 
     @property
     def bedrock_runtime(self):
         if self._bedrock_runtime is None:
             self._bedrock_runtime = self.session.client("bedrock-runtime")
         return self._bedrock_runtime
+
+    @property
+    def dynamodb(self):
+        if self._dynamodb is None:
+            self._dynamodb = self.session.resource("dynamodb")
+        return self._dynamodb
 
 # Singleton instance
 aws_manager = AWSClientManager()

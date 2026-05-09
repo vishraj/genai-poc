@@ -12,10 +12,6 @@ class DataService:
     def __init__(self, conn_string: Optional[str] = None):
         """
         Initializes the DataService.
-        
-        Args:
-            conn_string: Connection string for PostgreSQL. 
-                        Defaults to DATABASE_URL environment variable.
         """
         self.conn_string = conn_string or os.getenv(
             "DATABASE_URL", 
@@ -25,16 +21,55 @@ class DataService:
     def _get_connection(self):
         return psycopg2.connect(self.conn_string, cursor_factory=RealDictCursor)
 
+    def resolve_user_id(self, identifier: str) -> Optional[str]:
+        """
+        Attempts to resolve a user_id from either a literal ID or a name search.
+        """
+        query = "SELECT user_id FROM training.employee_fact WHERE user_id = %s"
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (identifier,))
+                res = cur.fetchone()
+                if res: return res['user_id']
+                
+                search_query = """
+                SELECT user_id FROM training.employee_fact 
+                WHERE (first_name || ' ' || last_name) ILIKE %s
+                   OR (last_name || ' ' || first_name) ILIKE %s
+                   OR last_name ILIKE %s
+                LIMIT 1;
+                """
+                cur.execute(search_query, (identifier, identifier, identifier))
+                res = cur.fetchone()
+                if res: return res['user_id']
+        return None
+
+    def get_total_employees(self) -> int:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT count(*) FROM training.employee_fact;")
+                return cur.fetchone()['count']
+
+    def get_total_completions(self) -> int:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT count(*) FROM training.transcript_fact WHERE enrollment_status = 'Completed';")
+                return cur.fetchone()['count']
+
+    def get_catalog_size(self) -> int:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT count(*) FROM training.catalog_fact;")
+                return cur.fetchone()['count']
+
+    def get_active_enrollments(self) -> int:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT count(*) FROM training.transcript_fact WHERE enrollment_status = 'Enrolled';")
+                return cur.fetchone()['count']
+
     def get_employee_summary(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Retrieves a comprehensive summary of an employee, including demographic data and transcript status counts.
-        
-        Args:
-            user_id: The unique identifier for the employee (e.g., 'ABC123').
-            
-        Returns:
-            A dictionary containing employee details and completion stats, or None if not found.
-        """
+        resolved_id = self.resolve_user_id(user_id) or user_id
         query = """
         SELECT 
             e.*,
@@ -46,26 +81,13 @@ class DataService:
         """
         with self._get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, (user_id,))
+                cur.execute(query, (resolved_id,))
                 return cur.fetchone()
 
     def get_employee_transcript(self, user_id: str) -> List[Dict[str, Any]]:
-        """
-        Retrieves the full course transcript for a specific employee with human-readable course titles.
-        
-        Args:
-            user_id: The unique identifier for the employee.
-            
-        Returns:
-            A list of transcript records including course titles and enrollment status.
-        """
+        resolved_id = self.resolve_user_id(user_id) or user_id
         query = """
-        SELECT 
-            c.course_title,
-            t.course_number,
-            t.registration_date,
-            t.credit_date,
-            t.enrollment_status
+        SELECT c.course_title, t.course_number, t.registration_date, t.credit_date, t.enrollment_status
         FROM training.transcript_fact t
         JOIN training.catalog_fact c ON t.course_number = c.course_number
         WHERE t.user_id = %s
@@ -73,65 +95,39 @@ class DataService:
         """
         with self._get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, (user_id,))
+                cur.execute(query, (resolved_id,))
                 return cur.fetchall()
 
     def get_compliance_report(self, user_id: str) -> Dict[str, Any]:
-        """
-        Analyzes an employee's compliance with their job family curriculum.
-        Identifies which mandatory courses are missing or incomplete.
-        
-        Args:
-            user_id: The unique identifier for the employee.
-            
-        Returns:
-            A dictionary with compliance status, full curriculum details, and missing mandatory courses.
-        """
+        resolved_id = self.resolve_user_id(user_id) or user_id
         query = """
         WITH required_courses AS (
-            SELECT 
-                cf.course_number,
-                c.course_title,
-                cf.course_is_mandatory
+            SELECT cf.course_number, c.course_title, cf.course_is_mandatory
             FROM training.employee_fact e
             JOIN training.curriculum_fact cf ON e.job_family = cf.job_family
             JOIN training.catalog_fact c ON cf.course_number = c.course_number
             WHERE e.user_id = %s
         )
-        SELECT 
-            rc.course_title,
-            rc.course_number,
-            rc.course_is_mandatory,
-            COALESCE(t.enrollment_status, 'Not Started') as status,
-            t.credit_date
+        SELECT rc.course_title, rc.course_number, rc.course_is_mandatory, COALESCE(t.enrollment_status, 'Not Started') as status, t.credit_date
         FROM required_courses rc
         LEFT JOIN training.transcript_fact t ON rc.course_number = t.course_number AND t.user_id = %s;
         """
         with self._get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, (user_id, user_id))
+                cur.execute(query, (resolved_id, resolved_id))
                 results = cur.fetchall()
-                
-                mandatory_missing = [r for r in results if r['course_is_mandatory'] and r['status'] != 'Completed']
+                if not results: return {"status": "Error", "message": f"No curriculum found for user {resolved_id}"}
+                mandatory_count = sum(1 for r in results if r['course_is_mandatory'])
+                completed_mandatory = sum(1 for r in results if r['course_is_mandatory'] and r['status'] == 'Completed')
+                missing = [r for r in results if r['course_is_mandatory'] and r['status'] != 'Completed']
+                rate = (completed_mandatory / mandatory_count * 100) if mandatory_count > 0 else 100
                 return {
-                    "user_id": user_id,
-                    "is_compliant": len(mandatory_missing) == 0,
-                    "total_required": len(results),
-                    "missing_mandatory_count": len(mandatory_missing),
-                    "curriculum_details": results,
-                    "missing_mandatory_list": mandatory_missing
+                    "user_id": resolved_id, "completion_rate": round(rate, 1),
+                    "mandatory_count": mandatory_count, "completed_mandatory": completed_mandatory,
+                    "missing_mandatory": missing, "full_report": results
                 }
 
     def search_courses(self, query_text: str) -> List[Dict[str, Any]]:
-        """
-        Searches the training catalog for courses by title.
-        
-        Args:
-            query_text: The search term (e.g., 'Currency' or 'Security').
-            
-        Returns:
-            A list of matching courses.
-        """
         sql = "SELECT * FROM training.catalog_fact WHERE course_title ILIKE %s OR course_number ILIKE %s;"
         with self._get_connection() as conn:
             with conn.cursor() as cur:
@@ -140,29 +136,15 @@ class DataService:
                 return cur.fetchall()
 
     def get_team_training_summary(self, team_name: str) -> List[Dict[str, Any]]:
-        """
-        Aggregates training progress for an entire team.
-        
-        Args:
-            team_name: The human-readable name of the team.
-            
-        Returns:
-            A list of employees with their aggregate completion statistics.
-        """
         query = """
-        SELECT 
-            e.first_name,
-            e.last_name,
-            e.user_id,
-            e.job_family,
+        SELECT e.first_name, e.last_name, e.user_id, e.job_family,
             COUNT(t.row_num) FILTER (WHERE t.enrollment_status = 'Completed') as completed_count,
             COUNT(t.row_num) FILTER (WHERE t.enrollment_status = 'Enrolled') as in_progress_count,
             COUNT(t.row_num) FILTER (WHERE t.enrollment_status = 'Dropped') as dropped_count
         FROM training.employee_fact e
         LEFT JOIN training.transcript_fact t ON e.user_id = t.user_id
         WHERE e.team_name = %s
-        GROUP BY e.user_id, e.first_name, e.last_name, e.job_family
-        ORDER BY completed_count DESC;
+        GROUP BY e.user_id, e.first_name, e.last_name, e.job_family ORDER BY completed_count DESC;
         """
         with self._get_connection() as conn:
             with conn.cursor() as cur:
@@ -170,66 +152,37 @@ class DataService:
                 return cur.fetchall()
 
     def search_employees(self, name_query: str) -> List[Dict[str, Any]]:
+        sql = """
+        SELECT user_id, first_name, last_name, team_name, job_family 
+        FROM training.employee_fact 
+        WHERE first_name ILIKE %s OR last_name ILIKE %s OR (first_name || ' ' || last_name) ILIKE %s;
         """
-        Searches for employees by first or last name.
-        
-        Args:
-            name_query: The name or partial name to search for.
-            
-        Returns:
-            A list of matching employees.
-        """
-        sql = "SELECT user_id, first_name, last_name, team_name, job_family FROM training.employee_fact WHERE first_name ILIKE %s OR last_name ILIKE %s;"
         with self._get_connection() as conn:
             with conn.cursor() as cur:
                 search_val = f"%{name_query}%"
-                cur.execute(sql, (search_val, search_val))
+                cur.execute(sql, (search_val, search_val, search_val))
                 return cur.fetchall()
 
     def search_employees_by_name(self, first_name: Optional[str] = None, last_name: Optional[str] = None) -> List[Dict[str, Any]]:
-        """
-        Searches for employees by first name and/or last name (case-insensitive).
-        
-        Args:
-            first_name: The first name or partial first name to search for.
-            last_name: The last name or partial last name to search for.
-            
-        Returns:
-            A list of matching employees.
-        """
         sql = "SELECT user_id, first_name, last_name, team_name, job_family FROM training.employee_fact WHERE 1=1"
         params = []
         if first_name:
-            sql += " AND first_name ILIKE %s"
-            params.append(f"%{first_name}%")
+            sql += " AND first_name ILIKE %s"; params.append(f"%{first_name}%")
         if last_name:
-            sql += " AND last_name ILIKE %s"
-            params.append(f"%{last_name}%")
-            
-        if not params:
-            return []
-            
+            sql += " AND last_name ILIKE %s"; params.append(f"%{last_name}%")
+        if not params: return []
         with self._get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql, tuple(params))
                 return cur.fetchall()
 
     def get_completions_by_job_family(self) -> List[Dict[str, Any]]:
-        """
-        Aggregates course completions grouped by Job Family.
-        
-        Returns:
-            A list of job families and their corresponding completion counts.
-        """
         query = """
-        SELECT 
-            e.job_family,
-            COUNT(t.row_num) as completion_count
+        SELECT e.job_family, COUNT(t.row_num) as completion_count
         FROM training.employee_fact e
         JOIN training.transcript_fact t ON e.user_id = t.user_id
         WHERE t.enrollment_status = 'Completed'
-        GROUP BY e.job_family
-        ORDER BY completion_count DESC;
+        GROUP BY e.job_family ORDER BY completion_count DESC;
         """
         with self._get_connection() as conn:
             with conn.cursor() as cur:
@@ -237,25 +190,13 @@ class DataService:
                 return cur.fetchall()
 
     def get_completions_by_geography(self, level: str = 'office') -> List[Dict[str, Any]]:
-        """
-        Aggregates course completions grouped by geographic dimension (office or district).
-        
-        Args:
-            level: The geographic level ('office' or 'district').
-            
-        Returns:
-            A list of geographic locations and their corresponding completion counts.
-        """
         column = 'office_name' if level.lower() == 'office' else 'district_name'
         query = f"""
-        SELECT 
-            e.{column} as location,
-            COUNT(t.row_num) as completion_count
+        SELECT e.{column} as location, COUNT(t.row_num) as completion_count
         FROM training.employee_fact e
         JOIN training.transcript_fact t ON e.user_id = t.user_id
         WHERE t.enrollment_status = 'Completed'
-        GROUP BY e.{column}
-        ORDER BY completion_count DESC;
+        GROUP BY e.{column} ORDER BY completion_count DESC;
         """
         with self._get_connection() as conn:
             with conn.cursor() as cur:
@@ -263,41 +204,26 @@ class DataService:
                 return cur.fetchall()
 
     def get_mandatory_completion_rates(self) -> List[Dict[str, Any]]:
-        """
-        Calculates the completion rate of mandatory courses for each employee.
-        
-        Returns:
-            A list of employees with their mandatory course completion percentage.
-        """
         query = """
-        WITH mandatory_requirements AS (
-            SELECT 
-                e.user_id,
-                e.first_name,
-                e.last_name,
-                e.job_family,
-                cf.course_number
+        WITH total_req AS (
+            SELECT e.user_id, e.first_name, e.last_name, e.team_name, COUNT(cf.course_number) as req_count
             FROM training.employee_fact e
             JOIN training.curriculum_fact cf ON e.job_family = cf.job_family
-            WHERE cf.course_is_mandatory = TRUE
+            WHERE cf.course_is_mandatory = true GROUP BY e.user_id, e.first_name, e.last_name, e.team_name
         ),
-        completions AS (
-            SELECT 
-                mr.*,
-                CASE WHEN t.enrollment_status = 'Completed' THEN 1 ELSE 0 END as is_completed
-            FROM mandatory_requirements mr
-            LEFT JOIN training.transcript_fact t ON mr.user_id = t.user_id AND mr.course_number = t.course_number
+        completed_req AS (
+            SELECT t.user_id, COUNT(t.course_number) as comp_count
+            FROM training.transcript_fact t
+            JOIN training.curriculum_fact cf ON t.course_number = cf.course_number
+            JOIN training.employee_fact e ON t.user_id = e.user_id AND e.job_family = cf.job_family
+            WHERE cf.course_is_mandatory = true AND t.enrollment_status = 'Completed'
+            GROUP BY t.user_id
         )
-        SELECT 
-            user_id,
-            first_name,
-            last_name,
-            job_family,
-            COUNT(*) as total_mandatory,
-            SUM(is_completed) as completed_mandatory,
-            ROUND((SUM(is_completed)::NUMERIC / COUNT(*)::NUMERIC) * 100, 2) as completion_rate
-        FROM completions
-        GROUP BY user_id, first_name, last_name, job_family
+        SELECT tr.user_id, tr.first_name, tr.last_name, tr.team_name, tr.req_count,
+               COALESCE(cr.comp_count, 0) as completed_count,
+               ROUND((COALESCE(cr.comp_count, 0)::numeric / tr.req_count) * 100, 1) as completion_rate
+        FROM total_req tr
+        LEFT JOIN completed_req cr ON tr.user_id = cr.user_id
         ORDER BY completion_rate ASC;
         """
         with self._get_connection() as conn:
