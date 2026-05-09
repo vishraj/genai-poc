@@ -1,57 +1,87 @@
-# Gen AI POC
+# 📊 Training Intelligence Dashboard (GenAI PoC)
 
-A Proof of Concept project exploring Generative AI capabilities.
+A premium, protocol-compliant AI analytics platform designed for workforce training and compliance oversight. This Proof of Concept demonstrates a robust integration of **Model Context Protocol (MCP)**, **Amazon Bedrock**, and **AWS DynamoDB** within a professional Streamlit dashboard.
 
-## Project Structure
+---
 
-```
+## 🚀 Key Features
+
+- **MCP-Native Architecture**: Decoupled backend services exposed via the Model Context Protocol, ensuring scalability and standardized tool integration.
+- **Generative Insights**: Natural language data exploration powered by Claude 3.5 Sonnet on Amazon Bedrock.
+- **Persistent Conversations**: Full chat history persistence using **AWS DynamoDB**, allowing users to save, load, and manage multiple analysis sessions.
+- **Smart Name Resolution**: Automatic conversion of human names (e.g., "David Hill") into internal identifiers across all reporting tools.
+- **Executive Dashboards**: High-fidelity visualizations (Plotly) and executive summaries optimized for dark-mode professional environments.
+- **Automated Compliance Analysis**: Real-time gap analysis for mandatory training curriculums across the workforce.
+
+---
+
+## 🏗️ Project Structure
+
+```text
 genai-poc/
-├── src/            # Backend source code (Python, API logic, AI integrations)
-├── ui/             # Streamlit frontend application
-├── terraform/      # Infrastructure-as-Code for cloud resources
-└── sql/            # SQL scripts for database setup and queries
+├── src/
+│   ├── mcp_server.py      # FastMCP Server (exposes tools)
+│   ├── mcp_client.py      # Thread-safe UI Client for Streamlit
+│   ├── services/
+│   │   ├── ai_service.py      # Routing logic & Viz generation
+│   │   ├── data_service.py    # PostgreSQL query engine & Name resolution
+│   │   └── history_service.py # DynamoDB persistence layer
+│   └── utils/             # AWS/Config utilities
+├── ui/
+│   └── app.py             # Streamlit Dashboard application
+├── terraform/             # Cloud Infrastructure (DynamoDB, IAM)
+└── sql/                   # DDL & Data Ingestion scripts
 ```
 
-## Getting Started
+---
+
+## 🛠️ Getting Started
 
 ### Prerequisites
-- Python 3.10+
-- Terraform CLI
-- AWS CLI (or relevant cloud provider CLI)
+- **Python 3.10+**
+- **AWS Credentials** (configured with Bedrock and DynamoDB access)
+- **PostgreSQL Database** (with the `training` schema populated)
 
-### Setup
+### Installation
 
-1. **Install uv** (if not already installed)
-   Follow instructions at [astral.sh/uv](https://astral.sh/uv).
-
-2. **Install Dependencies**
+1. **Install dependencies** (using `uv`):
    ```bash
    uv sync
    ```
 
-3. **Run UI (Streamlit)**
+2. **Environment Configuration**:
+   Create a `.env` file in the root directory:
+   ```env
+   DATABASE_URL=postgresql://user:password@localhost:5432/trainingdb
+   AWS_REGION=us-east-1
+   MODEL_ID=anthropic.claude-3-5-sonnet-20240620-v1:0
+   ```
+
+### Running the Application
+
+1. **Start the Dashboard**:
    ```bash
    uv run streamlit run ui/app.py
    ```
+   *The app will automatically initialize the DynamoDB `FedCashChatHistory` table on its first run.*
 
-3. **Infrastructure**
+2. **Standalone MCP Server** (for use with Claude Desktop):
    ```bash
-   cd terraform
-   terraform init
-   terraform plan
-   terraform apply
+   uv run python src/mcp_server.py
    ```
 
-4. **Database**
-    - Run scripts in `sql/` in the order indicated by their filename prefix.
+---
 
-## MCP Server
-This project exposes its data services via a Model Context Protocol (MCP) server. 
+## 🧪 Technology Stack
 
-### To run the MCP server:
-```bash
-uv run src/mcp_server.py
-```
+- **Frontend**: Streamlit (Dashboard & Chat Interface)
+- **AI Backend**: Amazon Bedrock (Claude 3.5 Sonnet)
+- **Database**: PostgreSQL (Structured Data), AWS DynamoDB (Chat History)
+- **Communication**: Model Context Protocol (MCP) via FastMCP
+- **Visualization**: Plotly Express (Professional Dark Theme)
 
-See [mcp_walkthrough.md](./mcp_walkthrough.md) for detailed configuration instructions for Claude Desktop and other MCP clients.
+---
 
+## 🛡️ Compliance & Safety
+
+This PoC uses a restrictive `exec()` pattern for AI-generated charts, isolated within the UI layer. For production environments, it is recommended to transition to a structured chart-config JSON approach or a sandboxed execution environment.
