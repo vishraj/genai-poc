@@ -71,7 +71,8 @@ def get_dashboard_stats() -> str:
         "total_employees": data_service.get_total_employees(),
         "completions": data_service.get_total_completions(),
         "catalog_size": data_service.get_catalog_size(),
-        "in_progress": data_service.get_active_enrollments()
+        "in_progress": data_service.get_active_enrollments(),
+        "completion_delta": data_service.get_completion_trend()
     }
     return json.dumps(stats)
 

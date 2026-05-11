@@ -96,6 +96,37 @@ class DataService:
                 cur.execute("SELECT count(*) FROM training.transcript_fact WHERE enrollment_status = 'Enrolled';")
                 return cur.fetchone()['count']
 
+    def get_completion_trend(self) -> str:
+        """Calculates completions growth comparing the last two active months."""
+        query = """
+        WITH monthly_completions AS (
+            SELECT 
+                DATE_TRUNC('month', registration_date) as month,
+                COUNT(*) as count
+            FROM training.transcript_fact
+            WHERE enrollment_status = 'Completed'
+            GROUP BY 1
+            ORDER BY 1 DESC
+            LIMIT 2
+        )
+        SELECT count FROM monthly_completions;
+        """
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(query)
+                    rows = cur.fetchall()
+                    if len(rows) < 2: return "0%"
+                    
+                    latest = rows[0]['count']
+                    previous = rows[1]['count']
+                    
+                    if previous == 0: return "+100%"
+                    delta = ((latest - previous) / previous) * 100
+                    return f"{delta:+.1f}%"
+        except:
+            return "0%"
+
     def get_employee_summary(self, user_id: str) -> Optional[Dict[str, Any]]:
         resolved_id = self.resolve_user_id(user_id) or user_id
         query = """

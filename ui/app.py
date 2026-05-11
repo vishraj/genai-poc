@@ -102,7 +102,7 @@ except:
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Total Workforce", stats.get("total_employees", 0))
-c2.metric("Completions",     stats.get("completions",     0), delta="12%")
+c2.metric("Completions",     stats.get("completions",     0), delta=stats.get("completion_delta", "0%"))
 c3.metric("Active Catalog",  stats.get("catalog_size",    0))
 c4.metric("Risk Profile",    f"{stats.get('in_progress', 0)} Enrolled")
 
@@ -135,7 +135,14 @@ with tab_chat:
         if not st.session_state.history: st.session_state.current_title = query[:30]
         st.markdown(f'<div class="query-header">User Query</div><div class="query-text">{query}</div>', unsafe_allow_html=True)
         with st.status("Analyzing workforce data...", expanded=True) as status:
-            tool_calls = ai_service.route_query(query, history=st.session_state.history)
+            routing_res = ai_service.route_query(query, history=st.session_state.history)
+            
+            # Check if router returned an error string instead of a list
+            if isinstance(routing_res, str) and routing_res.startswith("Error"):
+                status.update(label=routing_res, state="error", expanded=True)
+                st.stop()
+                
+            tool_calls = routing_res
             # ── Tool Execution ───────────────────────────────────────────
             data_ctx: dict = {}
             ALLOWED_PARAMS = {
