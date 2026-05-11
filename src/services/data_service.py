@@ -1,5 +1,6 @@
 import os
 import psycopg2
+import re
 from psycopg2.extras import RealDictCursor
 from typing import List, Dict, Any, Optional
 
@@ -23,23 +24,50 @@ class DataService:
 
     def resolve_user_id(self, identifier: str) -> Optional[str]:
         """
-        Attempts to resolve a user_id from either a literal ID or a name search.
+        Systemic name resolution: handles whitespace, case, 'Name (ID)' format, 
+        and first/last name variations.
         """
-        query = "SELECT user_id FROM training.employee_fact WHERE user_id = %s"
+        if not identifier: return None
+        clean_id = str(identifier).strip()
+        
+        # 0. Handle "Name (ID)" or "ID (Name)" formats commonly produced by LLMs
+        if "(" in clean_id:
+            match = re.search(r"\(([^)]+)\)", clean_id)
+            if match:
+                potential_id = match.group(1).strip()
+                # Check if the extracted part is likely an ID (alphanumeric, no spaces, short)
+                if len(potential_id) <= 12 and " " not in potential_id:
+                    with self._get_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT user_id FROM training.employee_fact WHERE user_id ILIKE %s", (potential_id,))
+                            if cur.fetchone(): return potential_id.upper()
+        
         with self._get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, (identifier,))
+                # 1. Exact ID match (case-insensitive)
+                cur.execute("SELECT user_id FROM training.employee_fact WHERE user_id ILIKE %s", (clean_id,))
                 res = cur.fetchone()
                 if res: return res['user_id']
                 
+                # 2. Try splitting name into first and last
+                parts = clean_id.split()
+                if len(parts) >= 2:
+                    f, l = parts[0], parts[-1]
+                    cur.execute("SELECT user_id FROM training.employee_fact WHERE first_name ILIKE %s AND last_name ILIKE %s LIMIT 1", (f, l))
+                    res = cur.fetchone()
+                    if res: return res['user_id']
+                
+                # 3. Fallback to flexible wildcard search on full name variations
+                search_val = f"%{clean_id}%"
                 search_query = """
                 SELECT user_id FROM training.employee_fact 
-                WHERE (first_name || ' ' || last_name) ILIKE %s
-                   OR (last_name || ' ' || first_name) ILIKE %s
+                WHERE (COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')) ILIKE %s
+                   OR (COALESCE(last_name, '') || ' ' || COALESCE(first_name, '')) ILIKE %s
                    OR last_name ILIKE %s
+                   OR first_name ILIKE %s
                 LIMIT 1;
                 """
-                cur.execute(search_query, (identifier, identifier, identifier))
+                cur.execute(search_query, (search_val, search_val, search_val, search_val))
                 res = cur.fetchone()
                 if res: return res['user_id']
         return None

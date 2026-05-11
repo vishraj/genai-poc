@@ -136,9 +136,30 @@ with tab_chat:
         st.markdown(f'<div class="query-header">User Query</div><div class="query-text">{query}</div>', unsafe_allow_html=True)
         with st.status("Analyzing workforce data...", expanded=True) as status:
             tool_calls = ai_service.route_query(query, history=st.session_state.history)
+            # ── Tool Execution ───────────────────────────────────────────
             data_ctx: dict = {}
+            ALLOWED_PARAMS = {
+                "get_employee_summary": ["user_id"],
+                "get_employee_transcript": ["user_id"],
+                "get_compliance_report": ["user_id"],
+                "search_courses": ["query_text"],
+                "get_dashboard_stats": [],
+                "get_completions_by_geography": ["level"],
+                "get_mandatory_completion_rates": [],
+                "get_completions_by_job_family": [],
+                "get_team_training_summary": ["team_name"],
+                "search_employees": ["name_query"],
+                "search_employees_by_name": ["first_name", "last_name"]
+            }
+
             for call in tool_calls:
                 name, params = call.get("tool", ""), call.get("params", {})
+                
+                # Filter params to avoid "Extra inputs are not permitted"
+                if name in ALLOWED_PARAMS:
+                    allowed = ALLOWED_PARAMS[name]
+                    params = {k: v for k, v in params.items() if k in allowed}
+                
                 res = mcp_client.run_tool_sync(name, params)
                 if isinstance(res, str):
                     try: res = json.loads(res)
