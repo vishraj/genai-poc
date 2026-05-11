@@ -75,7 +75,7 @@ genai-poc/
 ## 🧪 Technology Stack
 
 - **Frontend**: Streamlit (Dashboard & Chat Interface)
-- **AI Backend**: Amazon Bedrock (Claude 3.5 Sonnet)
+- **AI Backend**: Amazon Bedrock (Claude 4.6 Sonnet)
 - **Database**: PostgreSQL (Structured Data), AWS DynamoDB (Chat History)
 - **Communication**: Model Context Protocol (MCP) via FastMCP
 - **Visualization**: Plotly Express (Professional Dark Theme)
