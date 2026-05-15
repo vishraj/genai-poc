@@ -28,9 +28,11 @@ from mcp_client import UI_MCPClient
 from services.history_service import HistoryService
 
 # ── Service Init ──────────────────────────────────────────────────────────────
-ai_service = AIService()
-mcp_client = UI_MCPClient()
-history_service = HistoryService()
+@st.cache_resource
+def get_services():
+    return AIService(), UI_MCPClient(), HistoryService()
+
+ai_service, mcp_client, history_service = get_services()
 
 # ── Session State Init ───────────────────────────────────────────────────────
 if "history" not in st.session_state:
@@ -39,6 +41,14 @@ if "session_id" not in st.session_state:
     st.session_state.session_id = history_service.create_new_session_id()
 if "current_title" not in st.session_state:
     st.session_state.current_title = "New Conversation"
+if "model_choice" not in st.session_state:
+    st.session_state.model_choice = "Claude Sonnet 4.6"
+if "temperature" not in st.session_state:
+    st.session_state.temperature = 0.0
+if "top_p" not in st.session_state:
+    st.session_state.top_p = 0.9
+if "top_k" not in st.session_state:
+    st.session_state.top_k = 250
 
 # ── Page Config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -62,13 +72,41 @@ div[data-testid="column"] button { display: flex; justify-content: center; align
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.title("💬 Chat History")
+    with st.expander("⚙️ Model Settings"):
+        with st.form("model_settings_form"):
+            model_options = ["Claude Sonnet 4.6", "Claude Opus 4.7"]
+            model_ids = {
+                "Claude Sonnet 4.6": "global.anthropic.claude-sonnet-4-6",
+                "Claude Opus 4.7": "global.anthropic.claude-opus-4-7"
+            }
+            try:
+                default_index = model_options.index(st.session_state.model_choice)
+            except ValueError:
+                default_index = 0
+                
+            new_model_choice = st.selectbox("Model", model_options, index=default_index)
+            new_temperature = st.slider("Temperature", 0.0, 1.0, float(st.session_state.temperature), 0.1)
+            new_top_p = st.slider("Top P", 0.0, 1.0, float(st.session_state.top_p), 0.05)
+            new_top_k = st.number_input("Top K", 1, 500, int(st.session_state.top_k), 10)
+
+            if st.form_submit_button("Apply Settings"):
+                st.session_state.model_choice = new_model_choice
+                st.session_state.temperature = new_temperature
+                st.session_state.top_p = new_top_p
+                st.session_state.top_k = new_top_k
+                st.rerun()
+
+    st.divider()
+    
     if st.button("➕ New Conversation", use_container_width=True):
         st.session_state.history = []
         st.session_state.session_id = history_service.create_new_session_id()
         st.session_state.current_title = "New Conversation"
         st.rerun()
+        
     st.divider()
+    
+    st.title("💬 Chat History")
     saved_sessions = history_service.list_sessions()
     for s in saved_sessions:
         sid, title = s['session_id'], s.get('title', 'Untitled')
@@ -89,16 +127,25 @@ with st.sidebar:
                     st.session_state.current_title = "New Conversation"
                 st.rerun()
 
+# Apply settings to ai_service
+ai_service.set_model(model_ids.get(st.session_state.model_choice, "global.anthropic.claude-sonnet-4-6"))
+ai_service.temperature = st.session_state.temperature
+ai_service.top_p = st.session_state.top_p
+ai_service.top_k = st.session_state.top_k
+
 # ── Header + KPI ──────────────────────────────────────────────────────────────
 st.title("📊 Training Intelligence Dashboard")
 st.caption(f"Strategy & Analysis Hub | Session: {st.session_state.current_title}")
 
-stats_raw = mcp_client.run_tool_sync("get_dashboard_stats", {}) or {}
-stats = {}
-try:
-    stats = json.loads(stats_raw) if isinstance(stats_raw, str) else stats_raw
-except:
-    stats = {}
+@st.cache_data(ttl=300)
+def fetch_dashboard_stats():
+    stats_raw = mcp_client.run_tool_sync("get_dashboard_stats", {}) or {}
+    try:
+        return json.loads(stats_raw) if isinstance(stats_raw, str) else stats_raw
+    except:
+        return {}
+
+stats = fetch_dashboard_stats()
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Total Workforce", stats.get("total_employees", 0))
@@ -111,14 +158,16 @@ st.divider()
 # ── Tabs ───────────────────────────────────────────────────────────────────────
 tab_chat, tab_analytics, tab_compliance = st.tabs(["💬 AI Intelligence", "📈 Performance Trends", "🛡️ Compliance Registry"])
 
-with tab_chat:
+@st.fragment
+def render_chat():
     st.subheader("Interactive Data Exploration")
     if st.session_state.history:
         for msg in st.session_state.history:
             if msg["role"] == "user":
                 st.markdown(f'<div class="query-header">User Query</div><div class="query-text">{msg["content"]}</div>', unsafe_allow_html=True)
             else:
-                st.markdown(f'<div class="insight-container"><div class="insight-label">AI Analysis & Insight</div><div class="insight-content">{msg["content"]}</div></div>', unsafe_allow_html=True)
+                formatted_msg = re.sub(r'\*{2,}([^*]+)\*{2,}', r'<b>\1</b>', msg["content"])
+                st.markdown(f'<div class="insight-container"><div class="insight-label">AI Analysis & Insight</div><div class="insight-content">{formatted_msg}</div></div>', unsafe_allow_html=True)
                 viz_data = msg.get("viz_data")
                 if viz_data:
                     bullets = viz_data.get("summary", [])
@@ -132,7 +181,8 @@ with tab_chat:
 
     query = st.chat_input("Ask about workforce training, compliance, or trends...")
     if query:
-        if not st.session_state.history: st.session_state.current_title = query[:30]
+        if not st.session_state.history: 
+            st.session_state.current_title = query[:30]
         st.markdown(f'<div class="query-header">User Query</div><div class="query-text">{query}</div>', unsafe_allow_html=True)
         with st.status("Analyzing workforce data...", expanded=True) as status:
             routing_res = ai_service.route_query(query, history=st.session_state.history)
@@ -173,14 +223,16 @@ with tab_chat:
                     except: pass
                 data_ctx[name] = res
                 if name in ("search_employees", "search_employees_by_name") and res:
-                    uid = res[0]["user_id"]
-                    data_ctx["summary"]    = mcp_client.run_tool_sync("get_employee_summary",    {"user_id": uid})
-                    data_ctx["transcript"] = mcp_client.run_tool_sync("get_employee_transcript", {"user_id": uid})
-                    data_ctx["compliance"] = mcp_client.run_tool_sync("get_compliance_report",   {"user_id": uid})
+                    if isinstance(res, list) and len(res) > 0 and isinstance(res[0], dict) and "user_id" in res[0]:
+                        uid = res[0]["user_id"]
+                        data_ctx["summary"]    = mcp_client.run_tool_sync("get_employee_summary",    {"user_id": uid})
+                        data_ctx["transcript"] = mcp_client.run_tool_sync("get_employee_transcript", {"user_id": uid})
+                        data_ctx["compliance"] = mcp_client.run_tool_sync("get_compliance_report",   {"user_id": uid})
             if data_ctx:
                 clean_ctx = {k: v for k, v in data_ctx.items() if v is not None}
                 viz = ai_service.generate_viz_logic(query, json.dumps(clean_ctx), history=st.session_state.history)
-                st.markdown(f'<div class="insight-container"><div class="insight-label">AI Analysis & Insight</div><div class="insight-content">{viz.get("explanation", "")}</div></div>', unsafe_allow_html=True)
+                formatted_viz = re.sub(r'\*{2,}([^*]+)\*{2,}', r'<b>\1</b>', viz.get("explanation", ""))
+                st.markdown(f'<div class="insight-container"><div class="insight-label">AI Analysis & Insight</div><div class="insight-content">{formatted_viz}</div></div>', unsafe_allow_html=True)
                 bullets = viz.get("summary", [])
                 if bullets:
                     cols = st.columns(len(bullets))
@@ -194,9 +246,12 @@ with tab_chat:
                 st.session_state.history.append({"role": "assistant", "content": viz.get("explanation", ""), "viz_data": viz})
                 history_service.save_session(st.session_state.session_id, st.session_state.current_title, st.session_state.history)
                 status.update(label="Analysis complete ✅", state="complete", expanded=False)
-                st.rerun()
+                st.rerun() # This will rerun the fragment
             else:
                 status.update(label="No records found", state="error", expanded=False)
+
+with tab_chat:
+    render_chat()
 
 with tab_analytics:
     st.subheader("Workforce Development Analytics")

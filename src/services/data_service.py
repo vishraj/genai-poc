@@ -196,18 +196,18 @@ class DataService:
 
     def get_team_training_summary(self, team_name: str) -> List[Dict[str, Any]]:
         query = """
-        SELECT e.first_name, e.last_name, e.user_id, e.job_family,
+        SELECT e.first_name, e.last_name, e.user_id, e.job_family, e.team_name,
             COUNT(t.row_num) FILTER (WHERE t.enrollment_status = 'Completed') as completed_count,
             COUNT(t.row_num) FILTER (WHERE t.enrollment_status = 'Enrolled') as in_progress_count,
             COUNT(t.row_num) FILTER (WHERE t.enrollment_status = 'Dropped') as dropped_count
         FROM training.employee_fact e
         LEFT JOIN training.transcript_fact t ON e.user_id = t.user_id
-        WHERE e.team_name = %s
-        GROUP BY e.user_id, e.first_name, e.last_name, e.job_family ORDER BY completed_count DESC;
+        WHERE e.team_name ILIKE %s OR e.job_family ILIKE %s
+        GROUP BY e.user_id, e.first_name, e.last_name, e.job_family, e.team_name ORDER BY completed_count DESC;
         """
         with self._get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, (team_name,))
+                cur.execute(query, (team_name, team_name))
                 return cur.fetchall()
 
     def search_employees(self, name_query: str) -> List[Dict[str, Any]]:

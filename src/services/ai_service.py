@@ -32,15 +32,15 @@ Given a USER QUERY and DATA CONTEXT (JSON), produce a concise insight and a poli
    paper_bgcolor='rgba(0,0,0,0)',
    plot_bgcolor='rgba(15,23,42,0.8)',
    font=dict(family='Inter, sans-serif', size=13, color='#f1f5f9'),
-   title=dict(font=dict(size=17, color='#f8fafc'), x=0.02),
+   title=dict(font=dict(size=17, color='#f8fafc'), x=0.02, y=0.96),
    legend=dict(
-       orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1,
+       orientation='h', yanchor='top', y=-0.15, xanchor='center', x=0.5,
        bgcolor='rgba(30,41,59,0.8)', bordercolor='#475569', borderwidth=1
    )
 
 4. HORIZONTAL BAR CHARTS (use for transcript / course status data):
    - orientation='h', y=course_column, x=numeric_column
-   - margin=dict(l=270, r=100, t=80, b=50)
+   - margin=dict(l=270, r=100, t=80, b=100)
    - height = max(380, 48 * number_of_rows)
    - Status color_discrete_map:
        {'Completed': '#22c55e', 'Enrolled': '#f59e0b', 'Dropped': '#ef4444',
@@ -48,7 +48,7 @@ Given a USER QUERY and DATA CONTEXT (JSON), produce a concise insight and a poli
    - Never truncate y-axis labels; set automargin=True on yaxis
 
 5. VERTICAL BAR / LINE CHARTS (use for aggregate / trend data):
-   - height=430, margin=dict(l=60, r=40, t=70, b=60), bargap=0.3
+   - height=430, margin=dict(l=60, r=40, t=70, b=120), bargap=0.3
    - color_discrete_sequence=['#3b82f6','#8b5cf6','#06b6d4','#f59e0b','#22c55e']
 
 6. AXIS LABELS: Always call:
@@ -72,11 +72,20 @@ Given a USER QUERY and DATA CONTEXT (JSON), produce a concise insight and a poli
 class AIService:
     def __init__(self):
         self.model_id = Config.MODEL_ID
-        # Handle inference profiles or full ARNs
-        self.model_arn = f"arn:aws:bedrock:{Config.AWS_REGION}::foundation-model/{Config.MODEL_ID}"
+        self.temperature = 0.0
+        self.top_p = 0.9
+        self.top_k = 250
+        self._resolve_arn()
+
+    def set_model(self, model_id: str):
+        self.model_id = model_id
+        self._resolve_arn()
+
+    def _resolve_arn(self):
+        self.model_arn = f"arn:aws:bedrock:{Config.AWS_REGION}::foundation-model/{self.model_id}"
         _inference_profile_prefixes = ("global.", "us.", "eu.", "ap.")
-        if ":" in Config.MODEL_ID or Config.MODEL_ID.startswith(_inference_profile_prefixes):
-            self.model_arn = Config.MODEL_ID
+        if ":" in self.model_id or self.model_id.startswith(_inference_profile_prefixes):
+            self.model_arn = self.model_id
 
     # ── 1. QUERY ROUTER ──────────────────────────────────────────────────────
     def route_query(self, query: str, history: list = None) -> list:
@@ -112,8 +121,11 @@ class AIService:
             "Return EXACTLY a JSON list: [{\"tool\": \"tool_name\", \"params\": {\"param_name\": \"value\"}}]\n"
         )
 
-        # Copy history to avoid mutating st.session_state.history
-        messages = list(history) if history else []
+        # Copy history and keep only role and content to avoid Bedrock validation errors
+        messages = []
+        if history:
+            for msg in history:
+                messages.append({"role": msg.get("role", ""), "content": msg.get("content", "")})
         messages.append({"role": "user", "content": query})
 
         response = self.generate_response(messages, system_prompt)
@@ -172,17 +184,18 @@ class AIService:
     def generate_response(self, messages: list, system_prompt: str = "") -> str:
         """Generic Claude 3 invocation via Amazon Bedrock."""
         try:
-            body = json.dumps({
+            body = {
                 "anthropic_version": "bedrock-2023-05-31",
                 "max_tokens": 4096,
                 "system": system_prompt,
                 "messages": messages,
-                "temperature": 0,
-            })
+                "temperature": self.temperature,
+                "top_k": self.top_k,
+            }
 
             response = aws_manager.bedrock_runtime.invoke_model(
                 modelId=self.model_arn,
-                body=body,
+                body=json.dumps(body),
             )
 
             response_body = json.loads(response.get("body").read())
