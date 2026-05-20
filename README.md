@@ -41,7 +41,9 @@ genai-poc/
 ### Prerequisites
 - **Python 3.10+**
 - **AWS Credentials** (configured with Bedrock and DynamoDB access)
-- **PostgreSQL Database** (with the `training` schema populated)
+- **PostgreSQL Database** (with the `training` schema populated, or provisioned via Terraform)
+- **Terraform** (to provision AWS and DB resources)
+- **uv** (for Python package management)
 
 ### Installation
 
@@ -50,12 +52,23 @@ genai-poc/
    uv sync
    ```
 
-2. **Environment Configuration**:
-   Create a `.env` file in the root directory:
+2. **Infrastructure Provisioning (Terraform)**:
+   Navigate to the `terraform/` directory to deploy the required AWS and database resources (RDS, DynamoDB, IAM).
+   ```bash
+   cd terraform
+   terraform init
+   terraform apply
+   ```
+   *Note: You will be prompted to provide a `db_password`. Keep note of the terraform outputs.*
+
+3. **Environment Configuration**:
+   Create a `.env` file in the root directory and use the outputs from the Terraform deployment:
    ```env
-   DATABASE_URL=postgresql://user:password@localhost:5432/trainingdb
+   DATABASE_URL=postgresql://postgres:<your-db-password>@<rds_endpoint>:5432/postgres
    AWS_REGION=us-east-1
    MODEL_ID=anthropic.claude-3-5-sonnet-20240620-v1:0
+   AWS_ACCESS_KEY_ID=<iam_access_key_id>
+   AWS_SECRET_ACCESS_KEY=<iam_secret_access_key>
    ```
 
 ### Running the Application
@@ -64,11 +77,29 @@ genai-poc/
    ```bash
    uv run streamlit run ui/app.py
    ```
-   *The app will automatically initialize the DynamoDB `FedCashChatHistory` table on its first run.*
+   *The app will connect to the RDS PostgreSQL database and DynamoDB chat history table provisioned by Terraform.*
 
 2. **Standalone MCP Server** (for use with Claude Desktop):
+   You can run the MCP server locally to expose the database tools to AI clients:
    ```bash
    uv run python src/mcp_server.py
+   ```
+   
+   To integrate with **Claude Desktop**, add the server to your `claude_desktop_config.json`:
+   ```json
+   {
+     "mcpServers": {
+       "training-data": {
+         "command": "<path-to-uv-executable>",
+         "args": [
+           "run",
+           "--project",
+           "<path-to-genai-poc-dir>",
+           "<path-to-genai-poc-dir>/src/mcp_server.py"
+         ]
+       }
+     }
+   }
    ```
 
 ---
