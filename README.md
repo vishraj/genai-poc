@@ -39,34 +39,74 @@ genai-poc/
 ## 🛠️ Getting Started
 
 ### Prerequisites
-- **Python 3.10+**
-- **AWS Credentials** (configured with Bedrock and DynamoDB access)
-- **PostgreSQL Database** (with the `training` schema populated)
+- **Python 3.13+** (Required)
+- **uv** package manager (`pip install uv`)
+- **AWS CLI** (for AWS credential configuration)
+- **PostgreSQL Client (`psql`)** (installed and added to your PATH to run database setup scripts)
 
-### Installation
+### Installation & Configuration
 
-1. **Install dependencies** (using `uv`):
+1. **Clone and Install dependencies**:
+   Ensure you have `uv` installed, then synchronize the workspace:
    ```bash
    uv sync
    ```
 
-2. **Environment Configuration**:
-   Create a `.env` file in the root directory:
-   ```env
-   DATABASE_URL=postgresql://user:password@localhost:5432/trainingdb
-   AWS_REGION=us-east-1
-   MODEL_ID=anthropic.claude-3-5-sonnet-20240620-v1:0
+2. **AWS Keys & Credentials Setup**:
+   The application requires access to Amazon Bedrock and AWS DynamoDB. Configure your AWS credentials using the AWS CLI:
+   ```bash
+   # Standard IAM credentials
+   aws configure
+   
+   # Or using AWS SSO
+   aws sso login --profile <your_profile_name>
    ```
+
+3. **Environment Configuration**:
+   Create a `.env` file in the root directory of the project. Include your AWS profile, database URL, and model configurations:
+   ```env
+   # PostgreSQL Connection String (RDS)
+   DATABASE_URL="postgresql://postgres:vGbD6l2k4KuI8n7Gq7wb@learningdb.cxe8g06806dj.us-east-1.rds.amazonaws.com:5432/trainingdb"
+
+   # Amazon Bedrock Configuration
+   AWS_REGION=us-east-1
+   MODEL_ID=global.anthropic.claude-sonnet-4-6
+   AWS_PROFILE=sso_profile  # Remove or change this if using a different profile/default credentials
+   ```
+
+### Database Setup (RDS PostgreSQL)
+
+All the required files for the RDS PostgreSQL setup are located in the `sql/ddl` folder. Follow these steps to initialize the database:
+
+1. **Navigate to the DDL directory**:
+   ```bash
+   cd sql/ddl
+   ```
+
+2. **Create the Schema and Tables**:
+   Run the SQL script using your `psql` client to create the `training` schema and required tables (`employee_fact`, `catalog_fact`, `curriculum_fact`, `transcript_fact`):
+   ```bash
+   psql -h learningdb.cxe8g06806dj.us-east-1.rds.amazonaws.com -p 5432 -U postgres -d trainingdb -f create_database_tables.sql
+   ```
+   *(You will be prompted for the database password).*
+
+3. **Load Synthetic Data**:
+   A PowerShell script is provided to efficiently load the CSV data into your RDS instance using `psql \copy`.
+   ```powershell
+   .\load_database_data.ps1
+   ```
+   This will populate the database with synthetic employees, course catalogs, and training transcripts.
 
 ### Running the Application
 
-1. **Start the Dashboard**:
+1. **Start the Streamlit Dashboard**:
+   From the project root directory, run:
    ```bash
    uv run streamlit run ui/app.py
    ```
-   *The app will automatically initialize the DynamoDB `FedCashChatHistory` table on its first run.*
+   *Note: The app will automatically initialize the DynamoDB `FedCashChatHistory` table on its first run to store conversation history.*
 
-2. **Standalone MCP Server** (for use with Claude Desktop):
+2. **Standalone MCP Server** (Optional, for use with Claude Desktop):
    ```bash
    uv run python src/mcp_server.py
    ```
