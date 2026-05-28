@@ -7,7 +7,7 @@ A premium, protocol-compliant AI analytics platform designed for workforce train
 ## 🚀 Key Features
 
 - **MCP-Native Architecture**: Decoupled backend services exposed via the Model Context Protocol, ensuring scalability and standardized tool integration.
-- **Generative Insights**: Natural language data exploration powered by Claude 3.5 Sonnet on Amazon Bedrock.
+- **Generative Insights**: Natural language data exploration powered by Claude 4.6 Sonnet on Amazon Bedrock.
 - **Persistent Conversations**: Full chat history persistence using **AWS DynamoDB**, allowing users to save, load, and manage multiple analysis sessions.
 - **Smart Name Resolution & Semantic Matching**: Automatic conversion of human names into internal identifiers, and intelligent query mapping that bridges the gap between natural language (e.g. "teams") and database schemas (e.g. "job families").
 - **High-Performance UI**: Optimized Streamlit rendering using `@st.cache_resource` for service connections, `@st.cache_data` for heavy queries, batched form inputs, and `st.fragment` for instantaneous, localized chat updates without full-page reloads.
@@ -109,6 +109,23 @@ All the required files for the RDS PostgreSQL setup are located in the `sql/ddl`
 2. **Standalone MCP Server** (Optional, for use with Claude Desktop):
    ```bash
    uv run python src/mcp_server.py
+   ```
+   
+   To integrate with **Claude Desktop**, add the server to your `claude_desktop_config.json`:
+   ```json
+   {
+     "mcpServers": {
+       "training-data": {
+         "command": "<path-to-uv-executable>",
+         "args": [
+           "run",
+           "--project",
+           "<path-to-genai-poc-dir>",
+           "<path-to-genai-poc-dir>/src/mcp_server.py"
+         ]
+       }
+     }
+   }
    ```
 
 ---
