@@ -65,8 +65,8 @@ genai-poc/
 3. **Environment Configuration**:
    Create a `.env` file in the root directory of the project. Include your AWS profile, database URL, and model configurations:
    ```env
-   # PostgreSQL Connection String (RDS)
-   DATABASE_URL="postgresql://postgres:vGbD6l2k4KuI8n7Gq7wb@learningdb.cxe8g06806dj.us-east-1.rds.amazonaws.com:5432/trainingdb"
+   # PostgreSQL Connection String (RDS) - Replace with your actual credentials and endpoint
+   DATABASE_URL="postgresql://<username>:<password>@<your-rds-endpoint>:5432/<database_name>"
 
    # Amazon Bedrock Configuration
    AWS_REGION=us-east-1
@@ -76,22 +76,35 @@ genai-poc/
 
 ### Database Setup (RDS PostgreSQL)
 
-All the required files for the RDS PostgreSQL setup are located in the `sql/ddl` folder. Follow these steps to initialize the database:
+All the required files for the RDS PostgreSQL setup are located in the `sql/ddl` folder. If you don't already have an RDS instance, follow these steps to create one from scratch and initialize the database:
 
-1. **Navigate to the DDL directory**:
+1. **Create an RDS PostgreSQL Instance**:
+   - Open the **AWS Management Console** and navigate to **RDS**.
+   - Click **Create database** and choose **Standard create**.
+   - Select **PostgreSQL** as the engine type.
+   - Choose a template (e.g., **Free tier** or **Dev/Test**).
+   - Set the **DB instance identifier** (e.g., `learningdb`).
+   - Set the **Master username** (e.g., `postgres`) and provide a **Master password**.
+   - Under **Connectivity**, set **Public access** to **Yes** so your local machine can connect. Ensure your VPC Security Group allows inbound TCP traffic on port `5432` from your IP address.
+   - Under **Additional configuration**, set the **Initial database name** (e.g., `trainingdb`).
+   - Click **Create database** and wait for the status to become `Available`.
+   - Once available, copy the **Endpoint** from the Connectivity & security tab.
+
+2. **Navigate to the DDL directory**:
    ```bash
    cd sql/ddl
    ```
 
-2. **Create the Schema and Tables**:
-   Run the SQL script using your `psql` client to create the `training` schema and required tables (`employee_fact`, `catalog_fact`, `curriculum_fact`, `transcript_fact`):
+3. **Create the Schema and Tables**:
+   Run the SQL script using your `psql` client to create the `training` schema and required tables (`employee_fact`, `catalog_fact`, `curriculum_fact`, `transcript_fact`).
+   *Note: Replace `<your-rds-endpoint>` with the Endpoint noted in Step 1, and ensure `-U` and `-d` match your username and database name.*
    ```bash
-   psql -h learningdb.cxe8g06806dj.us-east-1.rds.amazonaws.com -p 5432 -U postgres -d trainingdb -f create_database_tables.sql
+   psql -h <your-rds-endpoint> -p 5432 -U postgres -d trainingdb -f create_database_tables.sql
    ```
    *(You will be prompted for the database password).*
 
-3. **Load Synthetic Data**:
-   A PowerShell script is provided to efficiently load the CSV data into your RDS instance using `psql \copy`.
+4. **Load Synthetic Data**:
+   A PowerShell script is provided to efficiently load the CSV data into your RDS instance using `psql \copy`. Before running the script, open `load_database_data.ps1` and ensure the database connection parameters (`$HostName`, `$Username`, `$DatabaseName`) match your new RDS instance.
    ```powershell
    .\load_database_data.ps1
    ```
