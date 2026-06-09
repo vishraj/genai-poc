@@ -38,108 +38,94 @@ genai-poc/
 
 ## 🛠️ Getting Started
 
-### Prerequisites
-- **Python 3.13+** (Required)
-- **uv** package manager (`pip install uv`)
-- **AWS CLI** (for AWS credential configuration)
-- **PostgreSQL Client (`psql`)** (installed and added to your PATH to run database setup scripts)
+### 1. Prerequisites
 
-### Installation & Configuration
+Before starting, ensure you have the following installed and configured:
+- **Python 3.13+**
+- **uv package manager** (`pip install uv`)
+- **Terraform** (to provision AWS resources)
+- **AWS CLI** (configured with your AWS credentials)
+- **pgAdmin** (to connect to and manage the RDS PostgreSQL database)
 
-1. **Clone and Install dependencies**:
-   Ensure you have `uv` installed, then synchronize the workspace:
+**AWS Configuration**:
+Configure your AWS credentials using the AWS CLI so that Terraform and the application can access AWS resources:
+```bash
+aws configure
+# Or using AWS SSO: aws sso login --profile <your_profile_name>
+```
+
+### 2. Infrastructure Provisioning with Terraform
+
+Use Terraform to automatically provision the required AWS resources, such as DynamoDB tables and IAM roles.
+
+1. Navigate to the terraform directory:
    ```bash
+   cd terraform
+   ```
+2. Initialize Terraform:
+   ```bash
+   terraform init
+   ```
+3. Review the infrastructure plan:
+   ```bash
+   terraform plan
+   ```
+4. Apply the configuration to create the resources:
+   ```bash
+   terraform apply
+   ```
+
+### 3. Database Setup and Data Population using pgAdmin
+
+Once your RDS PostgreSQL instance is created (either manually or via Terraform), you can connect to it and populate the initial data using **pgAdmin**.
+
+1. **Connect to RDS using pgAdmin**:
+   - Open **pgAdmin** and right-click on **Servers** -> **Register** -> **Server...**
+   - **General Tab**: Name the server (e.g., `GenAI PoC RDS`).
+   - **Connection Tab**: 
+     - **Host name/address**: Your RDS Endpoint address.
+     - **Port**: `5432`
+     - **Maintenance database**: `postgres` (or your initial database name)
+     - **Username**: Your master username.
+     - **Password**: Your master password.
+   - Click **Save**.
+
+2. **Create the Required Schema and Tables**:
+   - In pgAdmin, expand your newly registered server and databases. Right-click on your target database and select **Query Tool**.
+   - Open the `sql/ddl/create_database_tables.sql` file from this repository, copy its contents, and paste it into the Query Tool.
+   - Click the **Execute/Refresh** button (or press `F5`) to create the schema and tables.
+
+3. **Populate the Data**:
+   - You can use the provided PowerShell script (`load_database_data.ps1`) to load the CSV data, ensuring you update the connection variables in the script first.
+   - Alternatively, you can use pgAdmin's **Import/Export Data** feature on each table to load the respective CSV files located in `sql/ddl/`.
+
+### 4. Application Installation and Execution
+
+1. **Clone and Install Dependencies**:
+   Return to the root directory and synchronize the workspace using `uv`:
+   ```bash
+   cd ..
    uv sync
    ```
 
-2. **AWS Keys & Credentials Setup**:
-   The application requires access to Amazon Bedrock and AWS DynamoDB. Configure your AWS credentials using the AWS CLI:
-   ```bash
-   # Standard IAM credentials
-   aws configure
-   
-   # Or using AWS SSO
-   aws sso login --profile <your_profile_name>
-   ```
-
-3. **Environment Configuration**:
-   Create a `.env` file in the root directory of the project. Include your AWS profile, database URL, and model configurations:
+2. **Environment Configuration**:
+   Create a `.env` file in the root directory. Include your AWS profile, database URL, and model configurations:
    ```env
-   # PostgreSQL Connection String (RDS) - Replace with your actual credentials and endpoint
+   # PostgreSQL Connection String (RDS)
    DATABASE_URL="postgresql://<username>:<password>@<your-rds-endpoint>:5432/<database_name>"
 
    # Amazon Bedrock Configuration
    AWS_REGION=us-east-1
    MODEL_ID=global.anthropic.claude-sonnet-4-6
-   AWS_PROFILE=sso_profile  # Remove or change this if using a different profile/default credentials
+   AWS_PROFILE=default  # Update if using a different profile
    ```
 
-### Database Setup (RDS PostgreSQL)
-
-All the required files for the RDS PostgreSQL setup are located in the `sql/ddl` folder. If you don't already have an RDS instance, follow these steps to create one from scratch and initialize the database:
-
-1. **Create an RDS PostgreSQL Instance**:
-   - Open the **AWS Management Console** and navigate to **RDS**.
-   - Click **Create database** and choose **Standard create**.
-   - Select **PostgreSQL** as the engine type.
-   - Choose a template (e.g., **Free tier** or **Dev/Test**).
-   - Set the **DB instance identifier** (e.g., `learningdb`).
-   - Set the **Master username** (e.g., `postgres`) and provide a **Master password**.
-   - Under **Connectivity**, set **Public access** to **Yes** so your local machine can connect. Ensure your VPC Security Group allows inbound TCP traffic on port `5432` from your IP address.
-   - Under **Additional configuration**, set the **Initial database name** (e.g., `trainingdb`).
-   - Click **Create database** and wait for the status to become `Available`.
-   - Once available, copy the **Endpoint** from the Connectivity & security tab.
-
-2. **Navigate to the DDL directory**:
-   ```bash
-   cd sql/ddl
-   ```
-
-3. **Create the Schema and Tables**:
-   Run the SQL script using your `psql` client to create the `training` schema and required tables (`employee_fact`, `catalog_fact`, `curriculum_fact`, `transcript_fact`).
-   *Note: Replace `<your-rds-endpoint>` with the Endpoint noted in Step 1, and ensure `-U` and `-d` match your username and database name.*
-   ```bash
-   psql -h <your-rds-endpoint> -p 5432 -U postgres -d trainingdb -f create_database_tables.sql
-   ```
-   *(You will be prompted for the database password).*
-
-4. **Load Synthetic Data**:
-   A PowerShell script is provided to efficiently load the CSV data into your RDS instance using `psql \copy`. Before running the script, open `load_database_data.ps1` and ensure the database connection parameters (`$HostName`, `$Username`, `$DatabaseName`) match your new RDS instance.
-   ```powershell
-   .\load_database_data.ps1
-   ```
-   This will populate the database with synthetic employees, course catalogs, and training transcripts.
-
-### Running the Application
-
-1. **Start the Streamlit Dashboard**:
+3. **Start the Streamlit Dashboard**:
    From the project root directory, run:
    ```bash
    uv run streamlit run ui/app.py
    ```
-   *Note: The app will automatically initialize the DynamoDB `FedCashChatHistory` table on its first run to store conversation history.*
-
-2. **Standalone MCP Server** (Optional, for use with Claude Desktop):
-   ```bash
-   uv run python src/mcp_server.py
-   ```
-   
-   To integrate with **Claude Desktop**, add the server to your `claude_desktop_config.json`:
-   ```json
-   {
-     "mcpServers": {
-       "training-data": {
-         "command": "<path-to-uv-executable>",
-         "args": [
-           "run",
-           "--project",
-           "<path-to-genai-poc-dir>",
-           "<path-to-genai-poc-dir>/src/mcp_server.py"
-         ]
-       }
-     }
-   }
-   ```
+   *Note: The app will automatically connect to DynamoDB and the PostgreSQL database based on your configuration.*
 
 ---
 
