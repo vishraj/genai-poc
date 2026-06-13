@@ -34,7 +34,7 @@ Given a USER QUERY and DATA CONTEXT (JSON), produce a concise insight and a poli
    font=dict(family='Inter, sans-serif', size=13, color='#f1f5f9'),
    title=dict(font=dict(size=17, color='#f8fafc'), x=0.02, y=0.96),
    legend=dict(
-       orientation='h', yanchor='top', y=-0.15, xanchor='center', x=0.5,
+       orientation='h', yanchor='bottom', y=1.05, xanchor='right', x=1,
        bgcolor='rgba(30,41,59,0.8)', bordercolor='#475569', borderwidth=1
    )
 
@@ -66,6 +66,14 @@ Given a USER QUERY and DATA CONTEXT (JSON), produce a concise insight and a poli
    - ONLY generate a chart if there is a meaningful numeric metric to visualize (e.g., completion counts, percentages, progress over time, or aggregate stats).
    - If the data is a list of items with only categorical info (names, titles, dates, descriptions) and no quantitative metric, leave CODE empty before ===END===.
    - For descriptive results, focus on providing a rich EXPLANATION and a bulleted SUMMARY instead.
+
+10. TEAM COMPLIANCE CHARTS (CRITICAL CONSISTENCY):
+    - When visualizing team training progress, ALWAYS use a horizontal stacked bar chart.
+    - Y-axis: Employee Name (e.g., "Lisa Flores (SKR149)").
+    - X-axis: Number of Mandatory Courses.
+    - Colors: 'Completed' (#22c55e) and 'Not Started' or 'Remaining' (#ef4444).
+    - Do NOT put text inside the colored bars.
+    - Add the completion percentage and location as an annotation or label placed to the right of the stacked bars.
 """
 
 
@@ -116,7 +124,8 @@ class AIService:
             "- ONLY include the necessary parameters defined in the tools. DO NOT add extra parameters.\n"
             "- If multiple people match a name, the system will resolve the best match automatically.\n"
             "- If a query is about AGGREGATE trends or metrics, use tools 2, 3, or 4.\n"
-            "- If a query is about a TEAM, use tool 11.\n\n"
+            "- If a query is about a TEAM, use tool 11.\n"
+            "- SCOPE GUARDRAIL: If the user asks a question that is NOT strictly related to workforce training, compliance, or HR analytics, return EXACTLY this: [{\"tool\": \"reject_out_of_scope\", \"params\": {}}]\n\n"
             "--- OUTPUT FORMAT ---\n"
             "Return EXACTLY a JSON list: [{\"tool\": \"tool_name\", \"params\": {\"param_name\": \"value\"}}]\n"
         )
@@ -138,7 +147,11 @@ class AIService:
                 clean = match.group(1).strip()
 
         try:
-            return json.loads(clean)
+            tool_calls = json.loads(clean)
+            for call in tool_calls:
+                if call.get("tool") == "reject_out_of_scope":
+                    return "Error: Query blocked by Scope Guardrail. Please ask questions related to workforce training, compliance, or HR analytics."
+            return tool_calls
         except Exception as e:
             print(f"[AIService] Router parse error: {e}. Raw: {response}")
             return []

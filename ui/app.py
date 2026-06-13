@@ -49,11 +49,13 @@ if "top_p" not in st.session_state:
     st.session_state.top_p = 0.9
 if "top_k" not in st.session_state:
     st.session_state.top_k = 250
+if "current_page" not in st.session_state:
+    st.session_state.current_page = "Dashboard"
 
 # ── Page Config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="FedCash Training Intelligence",
-    page_icon="📊",
+    page_title="FedCash Skills Navigator",
+    page_icon="🧭",
     layout="wide",
 )
 
@@ -72,6 +74,45 @@ div[data-testid="column"] button { display: flex; justify-content: center; align
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
+    st.header("Navigation")
+    if st.button("📊 Summary Statistics", use_container_width=True):
+        st.session_state.current_page = "Dashboard"
+        st.rerun()
+
+    if st.button("➕ New Conversation", use_container_width=True):
+        st.session_state.history = []
+        st.session_state.session_id = history_service.create_new_session_id()
+        st.session_state.current_title = "New Conversation"
+        st.session_state.current_page = "Chat"
+        st.rerun()
+
+    st.divider()
+    
+    st.title("💬 Chat History")
+    saved_sessions = history_service.list_sessions()
+    for s in saved_sessions:
+        sid, title = s['session_id'], s.get('title', 'Untitled')
+        col_title, col_del = st.columns([0.8, 0.2])
+        if col_title.button(f"📄 {title[:22]}...", key=f"load_{sid}", use_container_width=True):
+            session_data = history_service.get_session(sid)
+            if session_data:
+                st.session_state.history = session_data.get('messages', [])
+                st.session_state.session_id = sid
+                st.session_state.current_title = title
+                st.session_state.current_page = "Chat"
+                st.rerun()
+        with col_del:
+            if st.button("🗑️", key=f"del_{sid}"):
+                history_service.delete_session(sid)
+                if st.session_state.session_id == sid:
+                    st.session_state.history = []
+                    st.session_state.session_id = history_service.create_new_session_id()
+                    st.session_state.current_title = "New Conversation"
+                    st.session_state.current_page = "Dashboard"
+                st.rerun()
+
+    st.divider()
+
     with st.expander("⚙️ Model Settings"):
         with st.form("model_settings_form"):
             model_options = ["Claude Sonnet 4.6", "Claude Opus 4.7"]
@@ -96,46 +137,11 @@ with st.sidebar:
                 st.session_state.top_k = new_top_k
                 st.rerun()
 
-    st.divider()
-    
-    if st.button("➕ New Conversation", use_container_width=True):
-        st.session_state.history = []
-        st.session_state.session_id = history_service.create_new_session_id()
-        st.session_state.current_title = "New Conversation"
-        st.rerun()
-        
-    st.divider()
-    
-    st.title("💬 Chat History")
-    saved_sessions = history_service.list_sessions()
-    for s in saved_sessions:
-        sid, title = s['session_id'], s.get('title', 'Untitled')
-        col_title, col_del = st.columns([0.8, 0.2])
-        if col_title.button(f"📄 {title[:22]}...", key=f"load_{sid}", use_container_width=True):
-            session_data = history_service.get_session(sid)
-            if session_data:
-                st.session_state.history = session_data.get('messages', [])
-                st.session_state.session_id = sid
-                st.session_state.current_title = title
-                st.rerun()
-        with col_del:
-            if st.button("🗑️", key=f"del_{sid}"):
-                history_service.delete_session(sid)
-                if st.session_state.session_id == sid:
-                    st.session_state.history = []
-                    st.session_state.session_id = history_service.create_new_session_id()
-                    st.session_state.current_title = "New Conversation"
-                st.rerun()
-
 # Apply settings to ai_service
 ai_service.set_model(model_ids.get(st.session_state.model_choice, "global.anthropic.claude-sonnet-4-6"))
 ai_service.temperature = st.session_state.temperature
 ai_service.top_p = st.session_state.top_p
 ai_service.top_k = st.session_state.top_k
-
-# ── Header + KPI ──────────────────────────────────────────────────────────────
-st.title("📊 Training Intelligence Dashboard")
-st.caption(f"Strategy & Analysis Hub | Session: {st.session_state.current_title}")
 
 @st.cache_data(ttl=300)
 def fetch_dashboard_stats():
@@ -145,22 +151,8 @@ def fetch_dashboard_stats():
     except:
         return {}
 
-stats = fetch_dashboard_stats()
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Total Workforce", stats.get("total_employees", 0))
-c2.metric("Completions",     stats.get("completions",     0), delta=stats.get("completion_delta", "0%"))
-c3.metric("Active Catalog",  stats.get("catalog_size",    0))
-c4.metric("Risk Profile",    f"{stats.get('in_progress', 0)} Enrolled")
-
-st.divider()
-
-# ── Tabs ───────────────────────────────────────────────────────────────────────
-tab_chat, tab_analytics, tab_compliance = st.tabs(["💬 AI Intelligence", "📈 Performance Trends", "🛡️ Compliance Registry"])
-
 @st.fragment
 def render_chat():
-    st.subheader("Interactive Data Exploration")
     if st.session_state.history:
         for msg in st.session_state.history:
             if msg["role"] == "user":
@@ -181,19 +173,24 @@ def render_chat():
 
     query = st.chat_input("Ask about workforce training, compliance, or trends...")
     if query:
+        # Fast in-memory Python Guardrail (Zero Latency)
+        banned_words = ["fuck", "shit", "bitch", "asshole", "stupid", "idiot", "hack", "drop table", "dumb"]
+        query_lower = query.lower()
+        if any(bad_word in query_lower for bad_word in banned_words):
+            st.error("⚠️ Query blocked: Your request contains inappropriate or out-of-scope language.")
+            return
+
         if not st.session_state.history: 
             st.session_state.current_title = query[:30]
         st.markdown(f'<div class="query-header">User Query</div><div class="query-text">{query}</div>', unsafe_allow_html=True)
         with st.status("Analyzing workforce data...", expanded=True) as status:
             routing_res = ai_service.route_query(query, history=st.session_state.history)
             
-            # Check if router returned an error string instead of a list
             if isinstance(routing_res, str) and routing_res.startswith("Error"):
                 status.update(label=routing_res, state="error", expanded=True)
                 st.stop()
                 
             tool_calls = routing_res
-            # ── Tool Execution ───────────────────────────────────────────
             data_ctx: dict = {}
             ALLOWED_PARAMS = {
                 "get_employee_summary": ["user_id"],
@@ -206,13 +203,13 @@ def render_chat():
                 "get_completions_by_job_family": [],
                 "get_team_training_summary": ["team_name"],
                 "search_employees": ["name_query"],
-                "search_employees_by_name": ["first_name", "last_name"]
+                "search_employees_by_name": ["first_name", "last_name"],
+                "get_mandatory_completions_by_geography": ["level"],
+                "get_mandatory_completions_by_job_family": []
             }
 
             for call in tool_calls:
                 name, params = call.get("tool", ""), call.get("params", {})
-                
-                # Filter params to avoid "Extra inputs are not permitted"
                 if name in ALLOWED_PARAMS:
                     allowed = ALLOWED_PARAMS[name]
                     params = {k: v for k, v in params.items() if k in allowed}
@@ -246,41 +243,90 @@ def render_chat():
                 st.session_state.history.append({"role": "assistant", "content": viz.get("explanation", ""), "viz_data": viz})
                 history_service.save_session(st.session_state.session_id, st.session_state.current_title, st.session_state.history)
                 status.update(label="Analysis complete ✅", state="complete", expanded=False)
-                st.rerun() # This will rerun the fragment
+                st.rerun()
             else:
                 status.update(label="No records found", state="error", expanded=False)
 
-with tab_chat:
-    render_chat()
+st.warning("⚠️ **Disclaimer:** All data presented in this application is mock data generated for demonstration purposes.")
 
-with tab_analytics:
-    st.subheader("Workforce Development Analytics")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        hist_df = pd.DataFrame({"Year": ["2021", "2022", "2023", "2024"], "Completions": [26, 37, 36, 45]})
-        fig_line = px.line(hist_df, x="Year", y="Completions", markers=True, title="Annual Progress", template="plotly_dark")
-        fig_line.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(15,23,42,0.8)")
-        st.plotly_chart(fig_line, use_container_width=True)
-    with col_b:
-        geo_raw = mcp_client.run_tool_sync("get_completions_by_geography", {"level": "office"})
-        geo_data = {}
-        try: geo_data = json.loads(geo_raw) if isinstance(geo_raw, str) else (geo_raw or [])
-        except: geo_data = []
+if st.session_state.current_page == "Dashboard":
+    # ── Header + KPI ──────────────────────────────────────────────────────────────
+    st.title("🧭 FedCash Skills Navigator")
+    st.caption("Strategy & Analysis Hub | High-Level KPIs")
+    
+    stats = fetch_dashboard_stats()
+    c1, c2 = st.columns(2)
+    c1.metric("Total Workforce", stats.get("total_employees", 0))
+    c2.metric("Active Catalog",  stats.get("catalog_size",    0))
+
+    st.divider()
+    st.header("Summary Statistics")
+    
+    # Fetch chart data
+    geo_raw = mcp_client.run_tool_sync("get_completions_by_geography", {"level": "office"})
+    try:
+        geo_data = json.loads(geo_raw) if isinstance(geo_raw, str) else (geo_raw or [])
+    except Exception:
+        geo_data = []
+    
+    jf_raw = mcp_client.run_tool_sync("get_completions_by_job_family", {})
+    try:
+        jf_data = json.loads(jf_raw) if isinstance(jf_raw, str) else (jf_raw or [])
+    except Exception:
+        jf_data = []
+
+    mgeo_raw = mcp_client.run_tool_sync("get_mandatory_completions_by_geography", {"level": "office"})
+    try:
+        mgeo_data = json.loads(mgeo_raw) if isinstance(mgeo_raw, str) else (mgeo_raw or [])
+    except Exception:
+        mgeo_data = []
+
+    mjf_raw = mcp_client.run_tool_sync("get_mandatory_completions_by_job_family", {})
+    try:
+        mjf_data = json.loads(mjf_raw) if isinstance(mjf_raw, str) else (mjf_raw or [])
+    except Exception:
+        mjf_data = []
+
+    c_chart1, c_chart2 = st.columns(2)
+    with c_chart1:
         if geo_data:
-            df_geo = pd.DataFrame(geo_data).head(10)
-            fig_geo = px.bar(df_geo, x="completion_count", y="location", orientation="h", title="Top Performing Offices", template="plotly_dark")
-            fig_geo.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(15,23,42,0.8)", margin=dict(l=200, r=100, t=80, b=50))
+            df_geo = pd.DataFrame(geo_data)
+            fig_geo = px.pie(df_geo, values="completion_count", names="location", title="Course Completions by Office", template="plotly_dark")
+            fig_geo.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(15,23,42,0.8)", margin=dict(l=20, r=20, t=50, b=50))
             st.plotly_chart(fig_geo, use_container_width=True)
+            
+        if mgeo_data:
+            df_mgeo = pd.DataFrame(mgeo_data)
+            fig_mgeo = px.pie(df_mgeo, values="completion_count", names="location", title="Mandatory Completions by Office", template="plotly_dark")
+            fig_mgeo.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(15,23,42,0.8)", margin=dict(l=20, r=20, t=50, b=50))
+            st.plotly_chart(fig_mgeo, use_container_width=True)
 
-with tab_compliance:
-    st.subheader("Mandatory Training Oversight")
+    with c_chart2:
+        if jf_data:
+            df_jf = pd.DataFrame(jf_data)
+            fig_jf = px.pie(df_jf, values="completion_count", names="job_family", title="Course Completions by Job Family", template="plotly_dark")
+            fig_jf.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(15,23,42,0.8)", margin=dict(l=20, r=20, t=50, b=50))
+            st.plotly_chart(fig_jf, use_container_width=True)
+
+        if mjf_data:
+            df_mjf = pd.DataFrame(mjf_data)
+            fig_mjf = px.pie(df_mjf, values="completion_count", names="job_family", title="Mandatory Completions by Job Family", template="plotly_dark")
+            fig_mjf.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(15,23,42,0.8)", margin=dict(l=20, r=20, t=50, b=50))
+            st.plotly_chart(fig_mjf, use_container_width=True)
+
+    st.divider()
+    st.header("🛡️ Compliance Registry")
     comp_raw = mcp_client.run_tool_sync("get_mandatory_completion_rates", {})
-    comp_data = {}
-    try: comp_data = json.loads(comp_raw) if isinstance(comp_raw, str) else (comp_raw or [])
-    except: comp_data = []
+    try:
+        comp_data = json.loads(comp_raw) if isinstance(comp_raw, str) else (comp_raw or [])
+    except Exception:
+        comp_data = []
     if comp_data:
         df_comp = pd.DataFrame(comp_data)
         st.dataframe(df_comp, use_container_width=True, hide_index=True)
 
-st.divider()
-st.caption(f"System time: {datetime.now():%Y-%m-%d %H:%M:%S} | Persistence: DynamoDB")
+elif st.session_state.current_page == "Chat":
+    st.title("💬 Skills Navigator AI Chat")
+    st.caption(f"Session: {st.session_state.current_title}")
+    render_chat()
+

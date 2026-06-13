@@ -124,5 +124,21 @@ def search_employees_by_name(first_name: Optional[str] = None, last_name: Option
     result = data_service.search_employees_by_name(first_name, last_name)
     return mcp_serialize(result) if result else "[]"
 
+@mcp.tool()
+def get_mandatory_completions_by_geography(level: str = 'office') -> str:
+    """
+    Aggregates mandatory course completions by 'office' or 'district'.
+    """
+    result = data_service.get_mandatory_completions_by_geography(level)
+    return mcp_serialize(result) if result else "[]"
+
+@mcp.tool()
+def get_mandatory_completions_by_job_family() -> str:
+    """
+    Aggregates mandatory course completions grouped by Job Family.
+    """
+    result = data_service.get_mandatory_completions_by_job_family()
+    return mcp_serialize(result) if result else "[]"
+
 if __name__ == "__main__":
     mcp.run()

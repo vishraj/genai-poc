@@ -11,8 +11,10 @@ A premium, protocol-compliant AI analytics platform designed for workforce train
 - **Persistent Conversations**: Full chat history persistence using **AWS DynamoDB**, allowing users to save, load, and manage multiple analysis sessions.
 - **Smart Name Resolution & Semantic Matching**: Automatic conversion of human names into internal identifiers, and intelligent query mapping that bridges the gap between natural language (e.g. "teams") and database schemas (e.g. "job families").
 - **High-Performance UI**: Optimized Streamlit rendering using `@st.cache_resource` for service connections, `@st.cache_data` for heavy queries, batched form inputs, and `st.fragment` for instantaneous, localized chat updates without full-page reloads.
-- **Executive Dashboards**: High-fidelity visualizations (Plotly) and executive summaries optimized for dark-mode professional environments.
+- **Executive Dashboards**: High-fidelity visualizations (Plotly) and executive summaries optimized for dark-mode professional environments, featuring an interactive Landing Page and AI Chat toggle.
 - **Automated Compliance Analysis**: Real-time gap analysis for mandatory training curriculums across the workforce.
+- **Office-Level Filtering**: Data strictly scoped to five allowed offices (San Francisco, Los Angeles, Seattle, Portland, Salt Lake City) for targeted, compliant reporting.
+- **Dual-Layer Safety Guardrails**: Built-in zero-latency profanity keyword filtering combined with LLM-driven "Scope Guardrails" that proactively reject out-of-bounds topics.
 
 ---
 
@@ -141,4 +143,8 @@ Once your RDS PostgreSQL instance is created (either manually or via Terraform),
 
 ## 🛡️ Compliance & Safety
 
-This PoC uses a restrictive `exec()` pattern for AI-generated charts, isolated within the UI layer. For production environments, it is recommended to transition to a structured chart-config JSON approach or a sandboxed execution environment.
+This PoC incorporates **Dual-Layer Safety Guardrails**:
+1. **Zero-Latency Keyword Filter**: Intercepts obvious toxicity and profanity entirely in-memory before invoking expensive network or API calls.
+2. **Scope Guardrails**: The routing LLM actively determines user intent and rejects queries completely unrelated to workforce training, HR, or compliance via specialized tool calls.
+
+Additionally, this PoC uses a restrictive `exec()` pattern for AI-generated charts, isolated within the UI layer. For production environments, it is recommended to transition to a structured chart-config JSON approach or a sandboxed execution environment.

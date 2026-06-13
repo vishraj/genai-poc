@@ -18,6 +18,7 @@ class DataService:
             "DATABASE_URL", 
             "dbname='trainingdb' user='postgres' host='localhost' password='yourpassword' port='5432'"
         )
+        self.allowed_offices = ('San Francisco', 'Los Angeles', 'Seattle', 'Portland', 'Salt Lake City')
 
     def _get_connection(self):
         return psycopg2.connect(self.conn_string, cursor_factory=RealDictCursor)
@@ -75,13 +76,13 @@ class DataService:
     def get_total_employees(self) -> int:
         with self._get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT count(*) FROM training.employee_fact;")
+                cur.execute("SELECT count(*) FROM training.employee_fact WHERE office_name IN %s;", (self.allowed_offices,))
                 return cur.fetchone()['count']
 
     def get_total_completions(self) -> int:
         with self._get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT count(*) FROM training.transcript_fact WHERE enrollment_status = 'Completed';")
+                cur.execute("SELECT count(*) FROM training.transcript_fact t JOIN training.employee_fact e ON t.user_id = e.user_id WHERE t.enrollment_status = 'Completed' AND e.office_name IN %s;", (self.allowed_offices,))
                 return cur.fetchone()['count']
 
     def get_catalog_size(self) -> int:
@@ -93,7 +94,7 @@ class DataService:
     def get_active_enrollments(self) -> int:
         with self._get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT count(*) FROM training.transcript_fact WHERE enrollment_status = 'Enrolled';")
+                cur.execute("SELECT count(*) FROM training.transcript_fact t JOIN training.employee_fact e ON t.user_id = e.user_id WHERE t.enrollment_status = 'Enrolled' AND e.office_name IN %s;", (self.allowed_offices,))
                 return cur.fetchone()['count']
 
     def get_completion_trend(self) -> str:
@@ -101,10 +102,11 @@ class DataService:
         query = """
         WITH monthly_completions AS (
             SELECT 
-                DATE_TRUNC('month', registration_date) as month,
+                DATE_TRUNC('month', t.registration_date) as month,
                 COUNT(*) as count
-            FROM training.transcript_fact
-            WHERE enrollment_status = 'Completed'
+            FROM training.transcript_fact t
+            JOIN training.employee_fact e ON t.user_id = e.user_id
+            WHERE t.enrollment_status = 'Completed' AND e.office_name IN %s
             GROUP BY 1
             ORDER BY 1 DESC
             LIMIT 2
@@ -114,7 +116,7 @@ class DataService:
         try:
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute(query)
+                    cur.execute(query, (self.allowed_offices,))
                     rows = cur.fetchall()
                     if len(rows) < 2: return "0%"
                     
@@ -196,14 +198,14 @@ class DataService:
 
     def get_team_training_summary(self, team_name: str) -> List[Dict[str, Any]]:
         query = """
-        SELECT e.first_name, e.last_name, e.user_id, e.job_family, e.team_name,
+        SELECT e.first_name, e.last_name, e.user_id, e.job_family, e.team_name, e.office_name,
             COUNT(t.row_num) FILTER (WHERE t.enrollment_status = 'Completed') as completed_count,
             COUNT(t.row_num) FILTER (WHERE t.enrollment_status = 'Enrolled') as in_progress_count,
             COUNT(t.row_num) FILTER (WHERE t.enrollment_status = 'Dropped') as dropped_count
         FROM training.employee_fact e
         LEFT JOIN training.transcript_fact t ON e.user_id = t.user_id
         WHERE e.team_name ILIKE %s OR e.job_family ILIKE %s
-        GROUP BY e.user_id, e.first_name, e.last_name, e.job_family, e.team_name ORDER BY completed_count DESC;
+        GROUP BY e.user_id, e.first_name, e.last_name, e.job_family, e.team_name, e.office_name ORDER BY completed_count DESC;
         """
         with self._get_connection() as conn:
             with conn.cursor() as cur:
@@ -212,7 +214,7 @@ class DataService:
 
     def search_employees(self, name_query: str) -> List[Dict[str, Any]]:
         sql = """
-        SELECT user_id, first_name, last_name, team_name, job_family 
+        SELECT user_id, first_name, last_name, team_name, job_family, office_name 
         FROM training.employee_fact 
         WHERE first_name ILIKE %s OR last_name ILIKE %s OR (first_name || ' ' || last_name) ILIKE %s;
         """
@@ -223,7 +225,7 @@ class DataService:
                 return cur.fetchall()
 
     def search_employees_by_name(self, first_name: Optional[str] = None, last_name: Optional[str] = None) -> List[Dict[str, Any]]:
-        sql = "SELECT user_id, first_name, last_name, team_name, job_family FROM training.employee_fact WHERE 1=1"
+        sql = "SELECT user_id, first_name, last_name, team_name, job_family, office_name FROM training.employee_fact WHERE 1=1"
         params = []
         if first_name:
             sql += " AND first_name ILIKE %s"; params.append(f"%{first_name}%")
@@ -240,12 +242,12 @@ class DataService:
         SELECT e.job_family, COUNT(t.row_num) as completion_count
         FROM training.employee_fact e
         JOIN training.transcript_fact t ON e.user_id = t.user_id
-        WHERE t.enrollment_status = 'Completed'
+        WHERE t.enrollment_status = 'Completed' AND e.office_name IN %s
         GROUP BY e.job_family ORDER BY completion_count DESC;
         """
         with self._get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query)
+                cur.execute(query, (self.allowed_offices,))
                 return cur.fetchall()
 
     def get_completions_by_geography(self, level: str = 'office') -> List[Dict[str, Any]]:
@@ -254,31 +256,31 @@ class DataService:
         SELECT e.{column} as location, COUNT(t.row_num) as completion_count
         FROM training.employee_fact e
         JOIN training.transcript_fact t ON e.user_id = t.user_id
-        WHERE t.enrollment_status = 'Completed'
+        WHERE t.enrollment_status = 'Completed' AND e.office_name IN %s
         GROUP BY e.{column} ORDER BY completion_count DESC;
         """
         with self._get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query)
+                cur.execute(query, (self.allowed_offices,))
                 return cur.fetchall()
 
     def get_mandatory_completion_rates(self) -> List[Dict[str, Any]]:
         query = """
         WITH total_req AS (
-            SELECT e.user_id, e.first_name, e.last_name, e.team_name, COUNT(cf.course_number) as req_count
+            SELECT e.user_id, e.first_name, e.last_name, e.team_name, e.office_name, COUNT(cf.course_number) as req_count
             FROM training.employee_fact e
             JOIN training.curriculum_fact cf ON e.job_family = cf.job_family
-            WHERE cf.course_is_mandatory = true GROUP BY e.user_id, e.first_name, e.last_name, e.team_name
+            WHERE cf.course_is_mandatory = true AND e.office_name IN %s GROUP BY e.user_id, e.first_name, e.last_name, e.team_name, e.office_name
         ),
         completed_req AS (
             SELECT t.user_id, COUNT(t.course_number) as comp_count
             FROM training.transcript_fact t
             JOIN training.curriculum_fact cf ON t.course_number = cf.course_number
             JOIN training.employee_fact e ON t.user_id = e.user_id AND e.job_family = cf.job_family
-            WHERE cf.course_is_mandatory = true AND t.enrollment_status = 'Completed'
+            WHERE cf.course_is_mandatory = true AND t.enrollment_status = 'Completed' AND e.office_name IN %s
             GROUP BY t.user_id
         )
-        SELECT tr.user_id, tr.first_name, tr.last_name, tr.team_name, tr.req_count,
+        SELECT tr.user_id, tr.first_name, tr.last_name, tr.team_name, tr.office_name, tr.req_count,
                COALESCE(cr.comp_count, 0) as completed_count,
                ROUND((COALESCE(cr.comp_count, 0)::numeric / tr.req_count) * 100, 1) as completion_rate
         FROM total_req tr
@@ -287,5 +289,35 @@ class DataService:
         """
         with self._get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query)
+                cur.execute(query, (self.allowed_offices, self.allowed_offices))
+                return cur.fetchall()
+
+
+    def get_mandatory_completions_by_geography(self, level: str = 'office') -> List[Dict[str, Any]]:
+        column = 'office_name' if level.lower() == 'office' else 'district_name'
+        query = f"""
+        SELECT e.{column} as location, COUNT(t.course_number) as completion_count
+        FROM training.transcript_fact t
+        JOIN training.curriculum_fact cf ON t.course_number = cf.course_number
+        JOIN training.employee_fact e ON t.user_id = e.user_id AND e.job_family = cf.job_family
+        WHERE cf.course_is_mandatory = true AND t.enrollment_status = 'Completed' AND e.office_name IN %s
+        GROUP BY e.{column} ORDER BY completion_count DESC;
+        """
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (self.allowed_offices,))
+                return cur.fetchall()
+
+    def get_mandatory_completions_by_job_family(self) -> List[Dict[str, Any]]:
+        query = """
+        SELECT e.job_family, COUNT(t.course_number) as completion_count
+        FROM training.transcript_fact t
+        JOIN training.curriculum_fact cf ON t.course_number = cf.course_number
+        JOIN training.employee_fact e ON t.user_id = e.user_id AND e.job_family = cf.job_family
+        WHERE cf.course_is_mandatory = true AND t.enrollment_status = 'Completed' AND e.office_name IN %s
+        GROUP BY e.job_family ORDER BY completion_count DESC;
+        """
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (self.allowed_offices,))
                 return cur.fetchall()

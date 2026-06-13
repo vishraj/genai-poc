@@ -1,6 +1,6 @@
 output "rds_endpoint" {
-  description = "The endpoint of the RDS instance"
-  value       = aws_db_instance.learningdb.endpoint
+  description = "The endpoint of the RDS Aurora cluster"
+  value       = aws_rds_cluster.learningdb.endpoint
 }
 
 output "dynamodb_table_name" {
@@ -8,13 +8,3 @@ output "dynamodb_table_name" {
   value       = aws_dynamodb_table.chat_history.name
 }
 
-output "iam_access_key_id" {
-  description = "The access key ID for the application user"
-  value       = aws_iam_access_key.app_user_key.id
-}
-
-output "iam_secret_access_key" {
-  description = "The secret access key for the application user"
-  value       = aws_iam_access_key.app_user_key.secret
-  sensitive   = true
-}
