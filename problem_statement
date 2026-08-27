@@ -1,0 +1,17 @@
+Problem Statement:
+Ensuring that all employees at Cash have taken their required training is an important step in maintaining 
+compliance with district policies. The training is tracked in a LMS and the courses can range from ethics 
+security courses to bio-hazard training.
+
+Ensuring timely tracking of completion and ensuring that all required individuals have completed their training is an ongoing challenge. 
+Usually each of the cash offices has one individual who downloads the data and provides importantto managers and supervisors. This is a 
+bottelneck in providing data to the end users. Failure to complete on time or failing to assign a course can be a compliance violation and cause issues.
+
+The data is also in a Excel spreadhseet and requires a lot of filtering in order to access the data.
+
+Business Value:
+The SkillsNavigator tool is an AI tool that alllows users in Cash Offices to keep track of course completions and perform training related compliance functions. The tool uses LMS data, employee information and job role/course information to deliver summaries and analysis.
+
+The tool was designed to let all identified users see the course completion data based on their role using natural language queries. It democratizes the process of accessing the data and speeds decision making.
+
+It also has the ability to match the required courses to each role and provides the ability to identify if a team member has not been assined a needed course - currently this ability does not exist.
