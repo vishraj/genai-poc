@@ -35,6 +35,64 @@ A premium, protocol-compliant AI analytics platform designed for workforce train
 
 ---
 
+## 📐 System Architecture
+
+```mermaid
+flowchart LR
+    %% Presentation & Auth Subgraph
+    subgraph PRESENTATION ["🖥️ PRESENTATION & SECURITY LAYER"]
+        direction TB
+        USER["👤 <b>User Persona</b><br/>Officer | Admin | Employee"]
+        AUTH["🔐 <b>Bcrypt Auth Gate</b><br/><code>config/users_auth.json</code>"]
+        APP["🧭 <b>Streamlit Dashboard</b><br/><code>ui/app.py</code><br/>• Executive Plotly Visuals<br/>• Role Scoping Engine"]
+        
+        USER -->|"Credentials"| AUTH
+        AUTH -->|"Authenticated Session"| APP
+    end
+
+    %% Protocol & Orchestration Subgraph
+    subgraph ORCHESTRATION ["⚡ PROTOCOL & SERVICE ORCHESTRATION"]
+        direction TB
+        ROUTER["🤖 <b>AI Service Router</b><br/><code>src/services/ai_service.py</code><br/>• Query Intent Classifier<br/>• Code Viz Generator"]
+        MCP_CLIENT["🔌 <b>UI MCP Client</b><br/><code>src/mcp_client.py</code>"]
+        MCP_SERVER["⚙️ <b>FastMCP Server</b><br/><code>src/mcp_server.py</code>"]
+        DATA_SVC["📊 <b>Data Service Engine</b><br/><code>src/services/data_service.py</code><br/>• Scoped SQL Execution<br/>• Smart Name Resolution"]
+        HIST_SVC["💾 <b>History Service</b><br/><code>src/services/history_service.py</code><br/>• User Isolated History"]
+        
+        APP -->|"User Query + Scope"| ROUTER
+        APP -->|"MCP Requests"| MCP_CLIENT
+        MCP_CLIENT -->|"Protocol Call"| MCP_SERVER
+        MCP_SERVER -->|"Execute Tool"| DATA_SVC
+        APP -->|"Save / Load State"| HIST_SVC
+    end
+
+    %% Data & Cloud Infrastructure Subgraph
+    subgraph INFRASTRUCTURE ["☁️ CLOUD & DATA INFRASTRUCTURE"]
+        direction TB
+        BEDROCK["🧠 <b>Amazon Bedrock</b><br/><code>Claude 4.6 Sonnet</code>"]
+        POSTGRES[("🐘 <b>AWS RDS PostgreSQL</b><br/><code>trainingdb schema</code><br/>• employee_fact<br/>• catalog_fact<br/>• curriculum_fact<br/>• transcript_fact")]
+        DYNAMO[("⚡ <b>AWS DynamoDB</b><br/><code>FedCashChatHistory</code>")]
+        
+        ROUTER -->|"Bedrock API"| BEDROCK
+        DATA_SVC -->|"Scoped SQL Queries"| POSTGRES
+        HIST_SVC -->|"Session Put / Get"| DYNAMO
+    end
+
+    %% Inter-layer Flow Connections
+    PRESENTATION ==> ORCHESTRATION ==> INFRASTRUCTURE
+
+    %% Custom Executive Styling
+    classDef presStyle fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#f8fafc;
+    classDef orchStyle fill:#1e1b4b,stroke:#8b5cf6,stroke-width:2px,color:#f8fafc;
+    classDef infraStyle fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#f8fafc;
+
+    class USER,AUTH,APP presStyle;
+    class ROUTER,MCP_CLIENT,MCP_SERVER,DATA_SVC,HIST_SVC orchStyle;
+    class BEDROCK,POSTGRES,DYNAMO infraStyle;
+```
+
+---
+
 ## 🏗️ Project Structure
 
 ```text
