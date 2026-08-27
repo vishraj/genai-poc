@@ -1,20 +1,37 @@
 # 📊 Training Intelligence Dashboard (GenAI PoC)
 
-A premium, protocol-compliant AI analytics platform designed for workforce training and compliance oversight. This Proof of Concept demonstrates a robust integration of **Model Context Protocol (MCP)**, **Amazon Bedrock**, and **AWS DynamoDB** within a professional Streamlit dashboard.
+A premium, protocol-compliant AI analytics platform designed for workforce training and compliance oversight. This Proof of Concept demonstrates a robust integration of **Model Context Protocol (MCP)**, **Amazon Bedrock**, **AWS DynamoDB**, and **PostgreSQL** within a professional Streamlit dashboard featuring **Bcrypt-Encrypted Authentication** and **Role-Based Access Control (RBAC)**.
 
 ---
 
 ## 🚀 Key Features
 
+- **Role-Based Access Control (RBAC)**: Multi-tiered data access scoping for 3 distinct organizational roles:
+  - **Officer (`OFF001`)**: Full system-wide access across all 5 office locations.
+  - **Learning Admin (`LAD001`)**: Single office scope (assigned to **Los Angeles**).
+  - **Employee (`EMP001`)**: Personal scope restricted to self course transcripts and required curriculum.
+- **Bcrypt Password Authentication**: Encrypted credential verification backed by `bcrypt` hashes stored in `config/users_auth.json`.
 - **MCP-Native Architecture**: Decoupled backend services exposed via the Model Context Protocol, ensuring scalability and standardized tool integration.
 - **Generative Insights**: Natural language data exploration powered by Claude 4.6 Sonnet on Amazon Bedrock.
 - **Persistent Conversations**: Full chat history persistence using **AWS DynamoDB**, allowing users to save, load, and manage multiple analysis sessions.
 - **Smart Name Resolution & Semantic Matching**: Automatic conversion of human names into internal identifiers, and intelligent query mapping that bridges the gap between natural language (e.g. "teams") and database schemas (e.g. "job families").
-- **High-Performance UI**: Optimized Streamlit rendering using `@st.cache_resource` for service connections, `@st.cache_data` for heavy queries, batched form inputs, and `st.fragment` for instantaneous, localized chat updates without full-page reloads.
-- **Executive Dashboards**: High-fidelity visualizations (Plotly) and executive summaries optimized for dark-mode professional environments, featuring an interactive Landing Page and AI Chat toggle.
+- **High-Performance UI**: Optimized Streamlit rendering using `@st.cache_resource` for service connections, `@st.cache_data` for heavy queries, and `st.fragment` for instantaneous, localized chat updates without full-page reloads.
+- **Executive Dashboards**: High-fidelity visualizations (Plotly) and executive summaries optimized for dark-mode professional environments, featuring a public default landing view and role-scoped portals.
 - **Automated Compliance Analysis**: Real-time gap analysis for mandatory training curriculums across the workforce.
 - **Office-Level Filtering**: Data strictly scoped to five allowed offices (San Francisco, Los Angeles, Seattle, Portland, Salt Lake City) for targeted, compliant reporting.
 - **Dual-Layer Safety Guardrails**: Built-in zero-latency profanity keyword filtering combined with LLM-driven "Scope Guardrails" that proactively reject out-of-bounds topics.
+
+---
+
+## 🔐 Demo Credentials
+
+| Role | Username / User ID | Test Password | Scope & Access Level |
+| :--- | :--- | :--- | :--- |
+| **Officer** | `OFF001` | `OfficerPass123!` | System-Wide (All 5 Cities: SF, LA, Seattle, Portland, Salt Lake City) |
+| **Learning Admin** | `LAD001` | `AdminPass123!` | Assigned Office Only (**Los Angeles**) |
+| **Employee** | `EMP001` | `EmpPass123!` | Personal Self Scope (**Evan Park** transcripts & curriculum) |
+
+*Note: All passwords stored in `config/users_auth.json` are encrypted using `bcrypt` salted hashes (`$2b$12$...`).*
 
 ---
 
@@ -22,8 +39,12 @@ A premium, protocol-compliant AI analytics platform designed for workforce train
 
 ```text
 genai-poc/
+├── config/
+│   └── users_auth.json    # Encrypted bcrypt password hashes & user roles
+├── scripts/
+│   └── generate_hash.py   # Utility script to generate/verify bcrypt password hashes
 ├── src/
-│   ├── mcp_server.py      # FastMCP Server (exposes tools)
+│   ├── mcp_server.py      # FastMCP Server (exposes data tools)
 │   ├── mcp_client.py      # Thread-safe UI Client for Streamlit
 │   ├── services/
 │   │   ├── ai_service.py      # Routing logic & Viz generation
@@ -31,7 +52,7 @@ genai-poc/
 │   │   └── history_service.py # DynamoDB persistence layer
 │   └── utils/             # AWS/Config utilities
 ├── ui/
-│   └── app.py             # Streamlit Dashboard application
+│   └── app.py             # Streamlit Dashboard application & Authentication Gate
 ├── terraform/             # Cloud Infrastructure (DynamoDB, IAM)
 └── sql/                   # DDL & Data Ingestion scripts
 ```
@@ -47,7 +68,7 @@ Before starting, ensure you have the following installed and configured:
 - **uv package manager** (`pip install uv`)
 - **Terraform** (to provision AWS resources)
 - **AWS CLI** (configured with your AWS credentials)
-- **pgAdmin** (to connect to and manage the RDS PostgreSQL database)
+- **PostgreSQL Client / psql** or **pgAdmin**
 
 **AWS Configuration**:
 Configure your AWS credentials using the AWS CLI so that Terraform and the application can access AWS resources:
@@ -55,6 +76,8 @@ Configure your AWS credentials using the AWS CLI so that Terraform and the appli
 aws configure
 # Or using AWS SSO: aws sso login --profile <your_profile_name>
 ```
+
+---
 
 ### 2. Infrastructure Provisioning with Terraform
 
@@ -68,76 +91,72 @@ Use Terraform to automatically provision the required AWS resources, such as Dyn
    ```bash
    terraform init
    ```
-3. Review the infrastructure plan:
-   ```bash
-   terraform plan
-   ```
-4. Apply the configuration to create the resources:
+3. Apply the configuration to create the resources:
    ```bash
    terraform apply
    ```
 
-### 3. Database Setup and Data Population using pgAdmin
+---
 
-Once your RDS PostgreSQL instance is created (either manually or via Terraform), you can connect to it and populate the initial data using **pgAdmin**.
+### 3. Database Setup and Data Population
 
-1. **Connect to RDS using pgAdmin**:
-   - Open **pgAdmin** and right-click on **Servers** -> **Register** -> **Server...**
-   - **General Tab**: Name the server (e.g., `GenAI PoC RDS`).
-   - **Connection Tab**: 
-     - **Host name/address**: Your RDS Endpoint address.
-     - **Port**: `5432`
-     - **Maintenance database**: `postgres` (or your initial database name)
-     - **Username**: Your master username.
-     - **Password**: Your master password.
-   - Click **Save**.
+1. **Create Database Tables**:
+   Execute `sql/ddl/create_database_tables.sql` against your PostgreSQL database (`trainingdb`):
+   ```bash
+   psql -h <YOUR_RDS_HOST> -p 5432 -U postgres -d trainingdb -f sql/ddl/create_database_tables.sql
+   ```
 
-2. **Create the Required Schema and Tables**:
-   - In pgAdmin, expand your newly registered server and databases. Right-click on your target database and select **Query Tool**.
-   - Open the `sql/ddl/create_database_tables.sql` file from this repository, copy its contents, and paste it into the Query Tool.
-   - Click the **Execute/Refresh** button (or press `F5`) to create the schema and tables.
+2. **Populate Synthetic Data**:
+   Run the PowerShell script to load all synthetic seed CSV data:
+   ```powershell
+   cd sql\ddl
+   .\load_database_data.ps1
+   ```
 
-3. **Populate the Data**:
-   - You can use the provided PowerShell script (`load_database_data.ps1`) to load the CSV data, ensuring you update the connection variables in the script first.
-   - Alternatively, you can use pgAdmin's **Import/Export Data** feature on each table to load the respective CSV files located in `sql/ddl/`.
+---
 
 ### 4. Application Installation and Execution
 
-1. **Clone and Install Dependencies**:
-   Return to the root directory and synchronize the workspace using `uv`:
+1. **Synchronize Dependencies with `uv`**:
+   From the project root directory, install all required dependencies (including `bcrypt`):
    ```bash
-   cd ..
    uv sync
    ```
 
 2. **Environment Configuration**:
-   Create a `.env` file in the root directory. Include your AWS profile, database URL, and model configurations:
+   Create a `.env` file in the root directory:
    ```env
    # PostgreSQL Connection String (RDS)
-   DATABASE_URL="postgresql://<username>:<password>@<your-rds-endpoint>:5432/<database_name>"
+   DATABASE_URL="postgresql://postgres:<password>@<your-rds-endpoint>:5432/trainingdb?options=-c%20search_path%3Dtraining"
 
    # Amazon Bedrock Configuration
    AWS_REGION=us-east-1
    MODEL_ID=global.anthropic.claude-sonnet-4-6
-   AWS_PROFILE=default  # Update if using a different profile
+   AWS_PROFILE=default
    ```
 
-3. **Start the Streamlit Dashboard**:
-   From the project root directory, run:
+3. **Run the Application with `uv`**:
+   Start the Streamlit dashboard using `uv`:
    ```bash
    uv run streamlit run ui/app.py
    ```
-   *Note: The app will automatically connect to DynamoDB and the PostgreSQL database based on your configuration.*
+
+4. **Managing Password Hashes**:
+   To generate a new bcrypt password hash for any user, run:
+   ```bash
+   uv run python scripts/generate_hash.py <your_password>
+   ```
 
 ---
 
 ## 🧪 Technology Stack
 
-- **Frontend**: Streamlit (Dashboard & Chat Interface)
+- **Frontend & Authentication**: Streamlit (Dashboard, RBAC, Bcrypt Auth)
+- **Security & Encryption**: Bcrypt (Password Hashing)
 - **AI Backend**: Amazon Bedrock (Claude 4.6 Sonnet)
-- **Database**: PostgreSQL (Structured Data), AWS DynamoDB (Chat History)
+- **Database**: PostgreSQL (Structured Workforce & Training Data), AWS DynamoDB (Chat History)
 - **Communication**: Model Context Protocol (MCP) via FastMCP
-- **Visualization**: Plotly Express (Professional Dark Theme)
+- **Visualization**: Plotly Express (Dark Mode Executive Charts)
 
 ---
 
@@ -146,5 +165,4 @@ Once your RDS PostgreSQL instance is created (either manually or via Terraform),
 This PoC incorporates **Dual-Layer Safety Guardrails**:
 1. **Zero-Latency Keyword Filter**: Intercepts obvious toxicity and profanity entirely in-memory before invoking expensive network or API calls.
 2. **Scope Guardrails**: The routing LLM actively determines user intent and rejects queries completely unrelated to workforce training, HR, or compliance via specialized tool calls.
-
-Additionally, this PoC uses a restrictive `exec()` pattern for AI-generated charts, isolated within the UI layer. For production environments, it is recommended to transition to a structured chart-config JSON approach or a sandboxed execution environment.
+3. **Role Enforcement**: User session data is hard-scoped based on role (`Officer`, `Learning Admin`, `Employee`), ensuring non-admin roles cannot query data outside their authorized scope.

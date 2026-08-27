@@ -3,13 +3,13 @@
 # Requires: psql (PostgreSQL client) installed and in your PATH.
 
 # --- Configuration ---
-$DB_HOST = "learningdb.cxe8g06806dj.us-east-1.rds.amazonaws.com"
+$DB_HOST = "mytrainingdb.cxe8g06806dj.us-east-1.rds.amazonaws.com"
 $DB_PORT = "5432"
 $DB_NAME = "trainingdb"
 $DB_USER = "postgres"
 
 # Optional: Set PGPASSWORD environment variable if you want to avoid being prompted
-$env:PGPASSWORD = 'vGbD6l2k4KuI8n7Gq7wb'
+$env:PGPASSWORD = 'Chenna$#123'
 
 Write-Host "--- Starting Data Load for $DB_NAME ---" -ForegroundColor Cyan
 

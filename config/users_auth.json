@@ -1,0 +1,17 @@
+{
+  "OFF001": {
+    "username": "OFF001",
+    "role": "Officer",
+    "password_hash": "$2b$12$zJQIIuzRcEO6la9T2lPKyOHmCY.EQm2x5M4CqZeCoIy7cGSlmm94C"
+  },
+  "LAD001": {
+    "username": "LAD001",
+    "role": "Learning Admin",
+    "password_hash": "$2b$12$SXA3i57Po0ZjT.ls2KCPf.zh70FMRfwS33tCVTLX05N7oMOzq2Zje"
+  },
+  "EMP001": {
+    "username": "EMP001",
+    "role": "Cash Handler",
+    "password_hash": "$2b$12$R2Szpu9owmWt54SN3AFD4OyuHDjYAYQZaVKl.JJ27ZJgt53tekCtO"
+  }
+}
