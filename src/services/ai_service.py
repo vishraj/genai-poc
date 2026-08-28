@@ -74,6 +74,12 @@ Given a USER QUERY and DATA CONTEXT (JSON), produce a concise insight and a poli
     - Colors: 'Completed' (#22c55e) and 'Not Started' or 'Remaining' (#ef4444).
     - Do NOT put text inside the colored bars.
     - Add the completion percentage and location as an annotation or label placed to the right of the stacked bars.
+
+11. ACCESS RESTRICTIONS & SCOPE LIMITS (CRITICAL):
+    - If DATA CONTEXT indicates access denial or role-based office scope restrictions (e.g., _user_scope_context or access_denied):
+    - Your EXPLANATION MUST explicitly state that access is RESTRICTED to their authorized office scope due to role-based access control policies.
+    - NEVER guess or speculate that data is missing, unrecorded, or that employees do not exist in the database. State clearly that the requested office/data is outside their authorization scope.
+    - Leave CODE completely empty before ===END=== (do not generate a chart for out-of-scope requests).
 """
 
 

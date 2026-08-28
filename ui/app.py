@@ -349,6 +349,30 @@ def render_chat():
             st.error("⚠️ Query blocked: Your request contains inappropriate or out-of-scope language.")
             return
 
+        # ── RBAC Scope Guardrail: Learning Admin Explicit Office Check ───────────
+        if role == "Learning Admin":
+            OFFICE_SYNONYMS = {
+                "san francisco": "San Francisco",
+                "san fran": "San Francisco",
+                "sf": "San Francisco",
+                "seattle": "Seattle",
+                "portland": "Portland",
+                "salt lake city": "Salt Lake City",
+                "salt lake": "Salt Lake City",
+                "slc": "Salt Lake City"
+            }
+            requested_offices = [canonical for keyword, canonical in OFFICE_SYNONYMS.items() 
+                                 if re.search(r'\b' + re.escape(keyword) + r'\b', query_lower)]
+            out_of_scope = [off for off in requested_offices if off.lower() != office_name.lower()]
+            if out_of_scope:
+                blocked_off = out_of_scope[0]
+                err_msg = f"Access Denied: As a Learning Admin for the {office_name} office, you are not authorized to view training data for the {blocked_off} office. Your authorization scope is restricted to {office_name}."
+                st.error(f"⚠️ {err_msg}")
+                st.session_state.history.append({"role": "user", "content": query})
+                st.session_state.history.append({"role": "assistant", "content": f"⚠️ {err_msg}"})
+                history_service.save_session(st.session_state.session_id, st.session_state.current_title, st.session_state.history, user_id=user_id if st.session_state.authenticated else "")
+                return
+
         if not st.session_state.history: 
             st.session_state.current_title = query[:30]
         st.markdown(f'<div class="query-header">User Query</div><div class="query-text">{query}</div>', unsafe_allow_html=True)
@@ -401,7 +425,43 @@ def render_chat():
 
                 # ── RBAC Guard: Learning Admin Role (Assigned Office Scope Only) ──
                 elif role == "Learning Admin":
-                    if name == "get_mandatory_completion_rates":
+                    # 1. Single Employee Tools: Verify target employee is in assigned office
+                    if name in ("get_employee_summary", "get_employee_transcript", "get_compliance_report"):
+                        target_uid = params.get("user_id")
+                        if target_uid:
+                            target_sum_raw = mcp_client.run_tool_sync("get_employee_summary", {"user_id": target_uid})
+                            target_sum = json.loads(target_sum_raw) if isinstance(target_sum_raw, str) else (target_sum_raw or {})
+                            target_office = target_sum.get("office_name", "") if isinstance(target_sum, dict) else ""
+                            if target_office and target_office != office_name:
+                                data_ctx["access_denied"] = f"Access Denied: As a Learning Admin for office '{office_name}', you do not have authorization to view training records for employee '{target_uid}' in office '{target_office}'."
+                                continue
+
+                    # 2. Mandatory Completion Rates: Filter by assigned office
+                    elif name == "get_mandatory_completion_rates":
+                        res_raw = mcp_client.run_tool_sync(name, params)
+                        try:
+                            parsed_res = json.loads(res_raw) if isinstance(res_raw, str) else res_raw
+                            if isinstance(parsed_res, list):
+                                parsed_res = [r for r in parsed_res if r.get("office_name") == office_name]
+                            data_ctx[name] = parsed_res
+                        except Exception:
+                            data_ctx[name] = res_raw
+                        continue
+
+                    # 3. Geography Aggregates: Filter by assigned office
+                    elif name in ("get_completions_by_geography", "get_mandatory_completions_by_geography"):
+                        res_raw = mcp_client.run_tool_sync(name, params)
+                        try:
+                            parsed_res = json.loads(res_raw) if isinstance(res_raw, str) else res_raw
+                            if isinstance(parsed_res, list):
+                                parsed_res = [r for r in parsed_res if r.get("location") == office_name]
+                            data_ctx[name] = parsed_res
+                        except Exception:
+                            data_ctx[name] = res_raw
+                        continue
+
+                    # 4. Team Training Summaries: Filter rows by assigned office
+                    elif name == "get_team_training_summary":
                         res_raw = mcp_client.run_tool_sync(name, params)
                         try:
                             parsed_res = json.loads(res_raw) if isinstance(res_raw, str) else res_raw
@@ -416,6 +476,15 @@ def render_chat():
                 if isinstance(res, str):
                     try: res = json.loads(res)
                     except: pass
+
+                # Filter employee search results for Learning Admin
+                if name in ("search_employees", "search_employees_by_name") and isinstance(res, list):
+                    if role == "Learning Admin":
+                        res = [r for r in res if isinstance(r, dict) and r.get("office_name") == office_name]
+                        if not res:
+                            data_ctx["access_denied"] = f"Access Denied: No matching employees found in your assigned office scope ({office_name})."
+                            continue
+
                 data_ctx[name] = res
 
                 # Ensure secondary searches obey RBAC boundaries
@@ -427,11 +496,35 @@ def render_chat():
                             data_ctx["summary"]    = mcp_client.run_tool_sync("get_employee_summary",    {"user_id": target_uid})
                             data_ctx["transcript"] = mcp_client.run_tool_sync("get_employee_transcript", {"user_id": target_uid})
                             data_ctx["compliance"] = mcp_client.run_tool_sync("get_compliance_report",   {"user_id": target_uid})
-                        else:
-                            data_ctx.pop(name, None)
-                            data_ctx["access_denied"] = f"Access Denied: You do not have authorization to view training records for employee '{target_uid}' in office '{target_office}'."
+                # ── Final RBAC Safety Net for Learning Admin ──
+                if role == "Learning Admin":
+                    data_ctx["_user_scope_context"] = (
+                        f"User is logged in as Learning Admin for office '{office_name}'. "
+                        f"Access to training data for any other office (e.g. Seattle, San Francisco, New York, etc.) is strictly restricted by security guardrails and filtered out. "
+                        f"If the user asked for data regarding an office other than '{office_name}', explicitly inform them that access is restricted to '{office_name}' only."
+                    )
+                    summary_obj = data_ctx.get("get_employee_summary") or data_ctx.get("summary")
+                    if isinstance(summary_obj, str):
+                        try: summary_obj = json.loads(summary_obj)
+                        except: pass
+                    if isinstance(summary_obj, dict) and summary_obj.get("office_name"):
+                        if summary_obj.get("office_name") != office_name:
+                            t_uid = summary_obj.get("user_id", "Unknown")
+                            t_off = summary_obj.get("office_name", "Unknown")
+                            data_ctx = {
+                                "access_denied": f"Access Denied: As a Learning Admin for office '{office_name}', you do not have authorization to view training records for employee '{t_uid}' in office '{t_off}'."
+                            }
 
             if data_ctx:
+                if "access_denied" in data_ctx:
+                    denial_msg = data_ctx["access_denied"]
+                    st.markdown(f'<div class="insight-container" style="border-left-color: #ef4444;"><div class="insight-label" style="color: #ef4444;">🔒 Access Denied</div><div class="insight-content">{denial_msg}</div></div>', unsafe_allow_html=True)
+                    st.session_state.history.append({"role": "user", "content": query})
+                    st.session_state.history.append({"role": "assistant", "content": f"🔒 {denial_msg}"})
+                    history_service.save_session(st.session_state.session_id, st.session_state.current_title, st.session_state.history, user_id=user_id if st.session_state.authenticated else "")
+                    status.update(label="Access Denied 🔒", state="error", expanded=False)
+                    st.rerun()
+
                 clean_ctx = {k: v for k, v in data_ctx.items() if v is not None}
                 viz = ai_service.generate_viz_logic(query, json.dumps(clean_ctx), history=st.session_state.history)
                 formatted_viz = re.sub(r'\*{2,}([^*]+)\*{2,}', r'<b>\1</b>', viz.get("explanation", ""))
