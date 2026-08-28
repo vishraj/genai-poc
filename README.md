@@ -8,7 +8,7 @@ A premium, protocol-compliant AI analytics platform designed for workforce train
 
 - **Role-Based Access Control (RBAC)**: Multi-tiered data access scoping for 3 distinct organizational roles:
   - **Officer (`OFF001`)**: Full system-wide access across all 5 office locations.
-  - **Learning Admin (`LAD001`)**: Single office scope (assigned to **Los Angeles**).
+  - **Learning Admin (`LAD001`)**: Single office scope.
   - **Employee (`EMP001`)**: Personal scope restricted to self course transcripts and required curriculum.
 - **Bcrypt Password Authentication**: Encrypted credential verification backed by `bcrypt` hashes stored in `config/users_auth.json`.
 - **MCP-Native Architecture**: Decoupled backend services exposed via the Model Context Protocol, ensuring scalability and standardized tool integration.
