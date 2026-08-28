@@ -7,7 +7,7 @@ A premium, protocol-compliant AI analytics platform designed for workforce train
 ## 🚀 Key Features
 
 - **Role-Based Access Control (RBAC)**: Multi-tiered data access scoping for 3 distinct organizational roles:
-  - **Super User (`OFF001`)**: Full system-wide access across all 5 office locations.
+  - **Super User (`OFF001`)**: Full system-wide access across all office locations.
   - **Learning Administrator (`LAD001`)**: Single office scope.
   - **Employee (`EMP001`)**: Personal scope restricted to self course transcripts and required curriculum.
 - **Bcrypt Password Authentication**: Encrypted credential verification backed by `bcrypt` hashes stored in `config/users_auth.json`.
