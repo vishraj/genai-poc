@@ -8,7 +8,7 @@ A premium, protocol-compliant AI analytics platform designed for workforce train
 
 - **Role-Based Access Control (RBAC)**: Multi-tiered data access scoping for 3 distinct organizational roles:
   - **Super User (`OFF001`)**: Full system-wide access across all 5 office locations.
-  - **Learning Admin (`LAD001`)**: Single office scope.
+  - **Learning Administrator (`LAD001`)**: Single office scope.
   - **Employee (`EMP001`)**: Personal scope restricted to self course transcripts and required curriculum.
 - **Bcrypt Password Authentication**: Encrypted credential verification backed by `bcrypt` hashes stored in `config/users_auth.json`.
 - **MCP-Native Architecture**: Decoupled backend services exposed via the Model Context Protocol, ensuring scalability and standardized tool integration.
@@ -18,7 +18,6 @@ A premium, protocol-compliant AI analytics platform designed for workforce train
 - **High-Performance UI**: Optimized Streamlit rendering using `@st.cache_resource` for service connections, `@st.cache_data` for heavy queries, and `st.fragment` for instantaneous, localized chat updates without full-page reloads.
 - **Executive Dashboards**: High-fidelity visualizations (Plotly) and executive summaries optimized for dark-mode professional environments, featuring a public default landing view and role-scoped portals.
 - **Automated Compliance Analysis**: Real-time gap analysis for mandatory training curriculums across the workforce.
-- **Office-Level Filtering**: Data strictly scoped to five allowed offices (San Francisco, Los Angeles, Seattle, Portland, Salt Lake City) for targeted, compliant reporting.
 - **Dual-Layer Safety Guardrails**: Built-in zero-latency profanity keyword filtering combined with LLM-driven "Scope Guardrails" that proactively reject out-of-bounds topics.
 
 ---
@@ -27,8 +26,8 @@ A premium, protocol-compliant AI analytics platform designed for workforce train
 
 | Role | Username / User ID | Test Password | Scope & Access Level |
 | :--- | :--- | :--- | :--- |
-| **Officer** | `OFF001` | `OfficerPass123!` | System-Wide (All 5 Cities: SF, LA, Seattle, Portland, Salt Lake City) |
-| **Learning Admin** | `LAD001` | `AdminPass123!` | Assigned Office Only (**Los Angeles**) |
+| **Super User** | `OFF001` | `OfficerPass123!` | System-Wide (All 5 Cities: SF, LA, Seattle, Portland, Salt Lake City) |
+| **Learning Administrator** | `LAD001` | `AdminPass123!` | Assigned Office Only (**Los Angeles**) |
 | **Employee** | `EMP001` | `EmpPass123!` | Personal Self Scope (**Evan Park** transcripts & curriculum) |
 
 *Note: All passwords stored in `config/users_auth.json` are encrypted using `bcrypt` salted hashes (`$2b$12$...`).*
